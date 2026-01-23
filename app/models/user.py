@@ -1,6 +1,6 @@
 from app.models.base import BaseModel, SoftDeleteMixin
 from app.extensions import db
-from app.enums.user_role import UserRole
+from app.enums import UserRole
 import bcrypt
 
 
