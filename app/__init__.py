@@ -1,6 +1,7 @@
 from flask import Flask
 from .extensions import db, migrate, jwt, ma
 from .config import Config
+from app.utils.error_handlers import register_error_handlers
 
 
 def create_app():
@@ -18,5 +19,11 @@ def create_app():
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(user_bp)
+
+    register_error_handlers(app)
+
+    @app.route("/health")
+    def health():
+        return {"status": "healthy"}, 200
 
     return app

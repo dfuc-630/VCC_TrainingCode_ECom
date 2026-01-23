@@ -4,9 +4,7 @@ from app import create_app
 flask_app = create_app()
 
 celery = Celery(
-    "worker",
-    broker="redis://localhost:6379/0",
-    backend="redis://localhost:6379/0"
+    "worker", broker="redis://localhost:6379/0", backend="redis://localhost:6379/0"
 )
 
 celery.conf.update(flask_app.config)

@@ -20,10 +20,7 @@ def profile():
     if not user:
         return jsonify({"msg": "User not found"}), 404
 
-    return jsonify({
-        "msg": "success",
-        "data": user_schema.dump(user)
-    }), 200
+    return jsonify({"msg": "success", "data": user_schema.dump(user)}), 200
 
 
 @user_bp.route("/")
@@ -38,21 +35,21 @@ def list_users():
     if email:
         query = query.filter(User.email.like(f"%{email}%"))
 
-    pagination = query.paginate(
-
-        page=page,
-        per_page=limit,
-        error_out=False
-    )
+    pagination = query.paginate(page=page, per_page=limit, error_out=False)
     users = pagination.items
-    return jsonify({
-        "msg": "success",
-        "page": page,
-        "limit": limit,
-        "total": pagination.total,
-        "pages": pagination.pages,
-        "data": users_schema.dump(users)
-    }), 200
+    return (
+        jsonify(
+            {
+                "msg": "success",
+                "page": page,
+                "limit": limit,
+                "total": pagination.total,
+                "pages": pagination.pages,
+                "data": users_schema.dump(users),
+            }
+        ),
+        200,
+    )
 
 
 @user_bp.route("/<int:id>")
@@ -63,10 +60,7 @@ def detail(id):
     if not user:
         return jsonify({"msg": "User not found"}), 404
 
-    return jsonify({
-        "msg": "success",
-        "data": user_schema.dump(user)  
-    }), 200
+    return jsonify({"msg": "success", "data": user_schema.dump(user)}), 200
 
 
 @user_bp.route("/", methods=["POST"])
@@ -91,13 +85,13 @@ def create():
     user = User(
         email=data["email"],
         password=hashed_password,
-        description=data.get("description")
+        description=data.get("description"),
     )
 
     db.session.add(user)
     db.session.commit()
 
-    return jsonify({
-        "msg": "Create User Successfully!",
-        "data": user_schema.dump(user)
-    }), 201
+    return (
+        jsonify({"msg": "Create User Successfully!", "data": user_schema.dump(user)}),
+        201,
+    )
