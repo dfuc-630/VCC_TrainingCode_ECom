@@ -5,11 +5,11 @@ from .order import Order, OrderItem
 from .product import Product
 
 __all__ = [
-    'User',
-    'Wallet',
-    'WalletTransaction',
-    'Category',
-    'Product',
-    'Order',
-    'OrderItem'
+    "User",
+    "Wallet",
+    "WalletTransaction",
+    "Category",
+    "Product",
+    "Order",
+    "OrderItem",
 ]

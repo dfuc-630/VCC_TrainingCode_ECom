@@ -9,7 +9,9 @@ class UserRegisterSchema(Schema):
     password = fields.Str(required=True, validate=validate.Length(min=6))
     full_name = fields.Str(validate=validate.Length(max=255))
     phone = fields.Str(validate=validate.Length(max=20))
-    role = fields.Str(required=True, validate=validate.OneOf([UserRole.CUSTOMER, UserRole.SELLER]))
+    role = fields.Str(
+        required=True, validate=validate.OneOf([UserRole.CUSTOMER, UserRole.SELLER])
+    )
 
 
 class UserLoginSchema(Schema):
@@ -23,7 +25,9 @@ class ProductCreateSchema(Schema):
     detail = fields.Str()
     category_id = fields.Str()
     original_price = fields.Decimal(places=2)
-    current_price = fields.Decimal(required=True, places=2, validate=validate.Range(min=0))
+    current_price = fields.Decimal(
+        required=True, places=2, validate=validate.Range(min=0)
+    )
     stock_quantity = fields.Int(validate=validate.Range(min=0))
     image_url = fields.Str(validate=validate.Length(max=500))
 
@@ -46,7 +50,9 @@ class OrderItemSchema(Schema):
 
 
 class OrderCreateSchema(Schema):
-    items = fields.List(fields.Nested(OrderItemSchema), required=True, validate=validate.Length(min=1))
+    items = fields.List(
+        fields.Nested(OrderItemSchema), required=True, validate=validate.Length(min=1)
+    )
     shipping_address = fields.Str(required=True)
     shipping_phone = fields.Str(required=True, validate=validate.Length(max=20))
 
