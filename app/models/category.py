@@ -3,8 +3,6 @@ from app.extensions import db
 
 
 class Category(BaseModel):
-    """Category model"""
-
     __tablename__ = "categories"
 
     name = db.Column(db.String(255), nullable=False)

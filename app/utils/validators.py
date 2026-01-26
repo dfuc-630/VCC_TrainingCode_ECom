@@ -4,8 +4,6 @@ from marshmallow import ValidationError
 
 
 def validate_schema(schema_class):
-    """Decorator to validate request data against schema"""
-
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -26,7 +24,6 @@ def validate_schema(schema_class):
 
 
 def validate_pagination():
-    """Validate pagination parameters"""
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 20, type=int)
 

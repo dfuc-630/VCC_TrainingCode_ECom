@@ -4,8 +4,6 @@ from decimal import Decimal
 
 
 class Product(BaseModel, SoftDeleteMixin):
-    """Product model with optimistic locking"""
-
     __tablename__ = "products"
 
     seller_id = db.Column(
@@ -35,11 +33,9 @@ class Product(BaseModel, SoftDeleteMixin):
     order_items = db.relationship("OrderItem", backref="product")
 
     def has_stock(self, quantity: int) -> bool:
-        """Check if product has sufficient stock"""
         return self.stock_quantity >= quantity
 
     def deduct_stock(self, quantity: int):
-        """Deduct stock with optimistic locking"""
         if not self.has_stock(quantity):
             raise ValueError(f"Insufficient stock for product {self.name}")
         self.stock_quantity -= quantity
@@ -47,7 +43,6 @@ class Product(BaseModel, SoftDeleteMixin):
         return self
 
     def add_stock(self, quantity: int):
-        """Add stock"""
         self.stock_quantity += quantity
         self.version += 1
         return self

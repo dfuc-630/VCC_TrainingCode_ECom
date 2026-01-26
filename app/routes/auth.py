@@ -10,7 +10,6 @@ auth_bp = Blueprint("auth", __name__)
 @auth_bp.route("/register", methods=["POST"])
 @validate_schema(UserRegisterSchema)
 def register():
-    """Register new user"""
     try:
         data = request.validated_data
         user = AuthService.register_user(**data)
@@ -28,7 +27,6 @@ def register():
 @auth_bp.route("/login", methods=["POST"])
 @validate_schema(UserLoginSchema)
 def login():
-    """User login"""
     try:
         data = request.validated_data
         result = AuthService.login_user(**data)

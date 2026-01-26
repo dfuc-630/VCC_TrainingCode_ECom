@@ -5,8 +5,6 @@ import bcrypt
 
 
 class User(BaseModel, SoftDeleteMixin):
-    """User model"""
-
     __tablename__ = "users"
 
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
@@ -19,7 +17,7 @@ class User(BaseModel, SoftDeleteMixin):
 
     # Relationships
     wallet = db.relationship(
-        "Wallet", backref="user", uselist=False, cascade="all, delete-orphan"
+        "Wallet", backref="user", uselist=False, cascade="all, delete-orphan" # 1 User - 1 Wallet
     )
     products = db.relationship(
         "Product",
@@ -27,7 +25,7 @@ class User(BaseModel, SoftDeleteMixin):
         lazy="dynamic",
         foreign_keys="Product.seller_id",
         cascade="all, delete-orphan",
-    )
+    ) # User can be Seller and can has many products, 1 - N
     customer_orders = db.relationship(
         "Order", backref="customer", lazy="dynamic", foreign_keys="Order.customer_id"
     )
@@ -36,23 +34,19 @@ class User(BaseModel, SoftDeleteMixin):
     )
 
     def set_password(self, password: str):
-        """Hash and set password"""
         self.password_hash = bcrypt.hashpw(
             password.encode("utf-8"), bcrypt.gensalt()
         ).decode("utf-8")
 
     def check_password(self, password: str) -> bool:
-        """Verify password"""
         return bcrypt.checkpw(
             password.encode("utf-8"), self.password_hash.encode("utf-8")
         )
 
     def has_role(self, role: str) -> bool:
-        """Check if user has specific role"""
         return self.role == role
 
     def to_dict(self, include_sensitive=False):
-        """Convert to dictionary"""
         data = super().to_dict()
         if not include_sensitive:
             data.pop("password_hash", None)

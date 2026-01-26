@@ -16,7 +16,6 @@ customer_bp = Blueprint("customer", __name__)
 @jwt_required()
 @role_required(UserRole.CUSTOMER)
 def get_wallet(current_user):
-    """Get wallet balance"""
     try:
         wallet = WalletService.get_wallet_by_user_id(current_user.id)
         return jsonify({"wallet": wallet.to_dict()}), 200
@@ -35,7 +34,7 @@ def deposit(current_user):
         wallet = WalletService.get_wallet_by_user_id(current_user.id)
         wallet, transaction = WalletService.deposit(
             wallet.id, data["amount"], data.get("description")
-        )
+        ) # using Pessimistic Locking instead of Optimistic
 
         return (
             jsonify(

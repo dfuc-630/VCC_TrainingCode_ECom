@@ -5,8 +5,6 @@ from app.enums import OrderStatus, PaymentStatus
 
 
 class Order(BaseModel):
-    """Order model"""
-
     __tablename__ = "orders"
 
     order_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
@@ -31,13 +29,11 @@ class Order(BaseModel):
     wallet_transactions = db.relationship("WalletTransaction", backref="order")
 
     def calculate_total(self):
-        """Calculate total amount from items"""
         total = sum(item.subtotal for item in self.items)
         self.total_amount = total
         return total
 
     def can_cancel(self) -> bool:
-        """Check if order can be cancelled"""
         return self.status in ["pending", "confirmed"]
 
     def to_dict(self, include_items=False):
@@ -49,8 +45,6 @@ class Order(BaseModel):
 
 
 class OrderItem(BaseModel):
-    """Order item model"""
-
     __tablename__ = "order_items"
 
     order_id = db.Column(
@@ -71,7 +65,6 @@ class OrderItem(BaseModel):
     subtotal = db.Column(db.Numeric(15, 2), nullable=False)
 
     def calculate_subtotal(self):
-        """Calculate subtotal"""
         self.subtotal = self.price * self.quantity
         return self.subtotal
 

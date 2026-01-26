@@ -5,8 +5,6 @@ from app.enums import TransactionType
 
 
 class Wallet(BaseModel):
-    """Wallet model"""
-
     __tablename__ = "wallets"
 
     user_id = db.Column(
@@ -26,16 +24,13 @@ class Wallet(BaseModel):
     )
 
     def can_deduct(self, amount: Decimal) -> bool:
-        """Check if wallet has sufficient balance"""
         return self.balance >= amount
 
     def add_balance(self, amount: Decimal):
-        """Add balance to wallet"""
         self.balance += amount
         return self
 
     def deduct_balance(self, amount: Decimal):
-        """Deduct balance from wallet"""
         if not self.can_deduct(amount):
             raise ValueError("Insufficient balance")
         self.balance -= amount
@@ -48,8 +43,6 @@ class Wallet(BaseModel):
 
 
 class WalletTransaction(BaseModel):
-    """Wallet transaction model"""
-
     __tablename__ = "wallet_transactions"
 
     wallet_id = db.Column(

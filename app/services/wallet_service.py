@@ -2,11 +2,10 @@ from app.models.wallet import Wallet, WalletTransaction
 from app.extensions import db
 from decimal import Decimal
 from app.enums import TransactionType
+from sqlalchemy.exc import SQLAlchemyError
 
 
 class WalletService:
-    """Wallet service handling financial operations"""
-
     @staticmethod
     def get_wallet_by_user_id(user_id: str) -> Wallet:
         """Get wallet by user ID"""
@@ -16,32 +15,40 @@ class WalletService:
         return wallet
 
     @staticmethod
-    def deposit(
-        wallet_id: str, amount: Decimal, description: str = None
-    ) -> tuple[Wallet, WalletTransaction]:
+    def deposit(wallet_id: str, amount: Decimal, description: str = None) -> tuple[Wallet, WalletTransaction]:
         """Deposit money to wallet"""
-        wallet = Wallet.query.get(wallet_id)
-        if not wallet:
-            raise ValueError("Wallet not found")
+        try:
+            wallet = (
+                db.session.query(Wallet)
+                .filter_by(id=wallet_id)
+                .with_for_update()
+                .first()
+            ) # lock transaction
 
-        balance_before = wallet.balance
-        wallet.add_balance(amount)
-        balance_after = wallet.balance
+            if not wallet:
+                raise ValueError("Wallet not found")
 
-        # Create transaction record
-        transaction = WalletTransaction(
-            wallet_id=wallet_id,
-            type=TransactionType.DEPOSIT,
-            amount=amount,
-            balance_before=balance_before,
-            balance_after=balance_after,
-            description=description or "Deposit",
-        )
+            balance_before = wallet.balance
+            wallet.add_balance(amount)
+            balance_after = wallet.balance
 
-        db.session.add(transaction)
-        db.session.commit()
+            transaction = WalletTransaction(
+                wallet_id=wallet_id,
+                type=TransactionType.DEPOSIT,
+                amount=amount,
+                balance_before=balance_before,
+                balance_after=balance_after,
+                description=description or "Deposit",
+            )
 
-        return wallet, transaction
+            db.session.add(transaction)
+            db.session.commit()
+
+            return wallet, transaction
+
+        except SQLAlchemyError:
+            db.session.rollback()
+            raise
 
     @staticmethod
     def deduct(

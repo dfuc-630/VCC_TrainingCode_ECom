@@ -5,13 +5,10 @@ from flask_jwt_extended import create_access_token, create_refresh_token
 
 
 class AuthService:
-    """Authentication service following Single Responsibility Principle"""
+    """Single Responsibility Principle"""
 
     @staticmethod
-    def register_user(
-        email: str, username: str, password: str, role: str, **kwargs
-    ) -> User:
-        """Register new user"""
+    def register_user(email: str, username: str, password: str, role: str, **kwargs) -> User:
         # Check if user exists
         if User.query.filter_by(email=email).first():
             raise ValueError("Email already exists")
@@ -60,7 +57,6 @@ class AuthService:
 
     @staticmethod
     def get_user_by_id(user_id: str) -> User:
-        """Get user by ID"""
         user = User.query.get(user_id)
         if not user or user.is_deleted:
             raise ValueError("User not found")
