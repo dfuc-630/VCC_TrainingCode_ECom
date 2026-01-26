@@ -8,7 +8,6 @@ from sqlalchemy.exc import SQLAlchemyError
 class WalletService:
     @staticmethod
     def get_wallet_by_user_id(user_id: str) -> Wallet:
-        """Get wallet by user ID"""
         wallet = Wallet.query.filter_by(user_id=user_id).first()
         if not wallet:
             raise ValueError("Wallet not found")

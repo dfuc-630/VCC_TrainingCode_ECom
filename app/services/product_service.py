@@ -72,14 +72,8 @@ class ProductService:
         return product
 
     @staticmethod
-    def search_products(
-        search: str = None,
-        category_id: str = None,
-        seller_id: str = None,
-        is_active: bool = True,
-        page: int = 1,
-        per_page: int = 20,
-    ):
+    def search_products(search: str = None, category_id: str = None,
+    seller_id: str = None, is_active: bool = True, page: int = 1, per_page: int = 20,):
         """Search products with filters"""
         query = Product.query.filter_by(deleted_at=None)
 

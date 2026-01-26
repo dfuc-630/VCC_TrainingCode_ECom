@@ -9,13 +9,9 @@ from app.enums import OrderStatus, PaymentStatus
 
 
 class OrderService:
-    """Order service handling order operations"""
-
     @staticmethod
-    def create_order(
-        customer_id: str, items_data: list, shipping_address: str, shipping_phone: str
-    ) -> Order:
-        """Create new order with transaction"""
+    def create_order(customer_id: str, items_data: list, shipping_address: str, shipping_phone: str) -> Order:
+        """Create new customer order"""
         if not items_data:
             raise ValueError("Order must have at least one item")
 
@@ -33,7 +29,7 @@ class OrderService:
             if not product.has_stock(item_data["quantity"]):
                 raise ValueError(f"Insufficient stock for {product.name}")
 
-            # Ensure all products from same seller
+            # Ensure all products from same seller/ Phase 1 still poor
             if seller_id is None:
                 seller_id = product.seller_id
             elif seller_id != product.seller_id:

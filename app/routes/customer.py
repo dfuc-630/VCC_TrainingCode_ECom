@@ -74,6 +74,7 @@ def get_transactions(current_user):
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
 
+# --maybe can add search transactions api
 
 # Product endpoints
 @customer_bp.route("/products", methods=["GET"])
@@ -82,11 +83,13 @@ def search_products():
     """Search products"""
     search = request.args.get("search", "")
     category_id = request.args.get("category_id")
+    seller_id = request.args.get("seller_id") # add seller_id
     page, per_page = validate_pagination()
 
     pagination = ProductService.search_products(
         search=search,
         category_id=category_id,
+        seller_id=seller_id,
         is_active=True,
         page=page,
         per_page=per_page,
@@ -110,7 +113,7 @@ def search_products():
 def get_product(product_id):
     """Get product detail"""
     try:
-        product = ProductService.get_product_by_id(product_id)
+        product = ProductService.get_product_by_id(product_id) # did raise same error in service
         if not product.is_active:
             raise ValueError("Product not found")
         return jsonify({"product": product.to_dict()}), 200
