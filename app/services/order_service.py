@@ -27,7 +27,7 @@ class OrderService:
                 .all()
             )
             
-            # Change to dictionary for fast
+            # Change to dictionary for fast get
             products_map = {p.id: p for p in products_query}
             
             if len(products_map) != len(product_ids):

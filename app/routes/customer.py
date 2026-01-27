@@ -126,7 +126,7 @@ def get_product(product_id):
 @jwt_required()
 @role_required(UserRole.CUSTOMER)
 @validate_schema(OrderCreateSchema)
-def create_order(current_user): #needed check
+def create_order(current_user): #checked
     """Create new order"""
     try:
         data = request.validated_data
