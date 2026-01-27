@@ -49,7 +49,7 @@ class WalletService:
             raise
 
     @staticmethod
-    def deduct(wallet_id: str, amount: Decimal, order_id: str = None, description: str = None) -> WalletTransaction:
+    def deduct(wallet_id: str, amount: Decimal, order_id: str = None, description: str = None, commit: bool = True) -> WalletTransaction:
         wallet = (
             db.session.query(Wallet)
             .filter_by(id=wallet_id)
@@ -76,7 +76,8 @@ class WalletService:
         )
 
         db.session.add(transaction)
-        db.session.commit()
+        if commit is True:
+            db.session.commit()
 
         return transaction
 
