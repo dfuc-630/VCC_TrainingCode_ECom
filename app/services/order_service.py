@@ -186,12 +186,27 @@ class OrderService:
                 raise ValueError("Order cannot be cancelled")
 
             # Update order status
+            if order.status == OrderStatus.CANCELLED:
+                raise ValueError("Order already cancelled")
+            if order.payment_status == PaymentStatus.REFUNDED:
+                raise ValueError("Order already refunded")
+
             order.status = OrderStatus.CANCELLED
 
             # Restore stock
+            product_ids = sorted(item.product_id for item in order.items)
+            products = (
+                db.session.query(Product)
+                .filter(Product.id.in_(product_ids))
+                .order_by(Product.id.asc())
+                .with_for_update()
+                .all()
+            )
+
+            products_map = {p.id: p for p in products}
+
             for item in order.items:
-                Product.query.filter_by(id=item.product_id).update({"stock": Product.stock + item.quantity}) # direct update
-                # item.product.add_stock(item.quantity) # race condition
+                products_map[item.product_id].stock += item.quantity
 
             # Refund to wallet
             if order.payment_status == PaymentStatus.PAID:
