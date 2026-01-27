@@ -11,7 +11,7 @@ from app.enums import OrderStatus, PaymentStatus
 class OrderService:
     @staticmethod
     def create_order(customer_id: str, items_data: list, shipping_address: str, shipping_phone: str) -> Order:
-        """Create new customer order"""
+
         if not items_data:
             raise ValueError("Order must have at least one item")
 
@@ -21,7 +21,12 @@ class OrderService:
         seller_id = None
 
         for item_data in items_data:
-            product = ProductService.get_product_by_id(item_data["product_id"])
+            product = (
+                    db.session.query(Product)
+                    .filter_by(id=item_data["product_id"])
+                    .with_for_update()
+                    .first()
+                ) #Lock for stock check & deduct
 
             if not product.is_active:
                 raise ValueError(f"Product {product.name} is not available")
@@ -29,12 +34,15 @@ class OrderService:
             if not product.has_stock(item_data["quantity"]):
                 raise ValueError(f"Insufficient stock for {product.name}")
 
-            # Ensure all products from same seller/ Phase 1 still poor
+            # Ensure all products from same seller/ Phase 1 still poor, need to improve
             if seller_id is None:
                 seller_id = product.seller_id
             elif seller_id != product.seller_id:
                 raise ValueError("All products must be from the same seller")
 
+            if item_data["quantity"] <= 0:
+                raise ValueError("Invalid quantity")
+    
             subtotal = product.current_price * item_data["quantity"]
             total_amount += subtotal
 
@@ -45,12 +53,9 @@ class OrderService:
                     "subtotal": subtotal,
                 }
             )
-
-        # Check wallet balance
         wallet = WalletService.get_wallet_by_user_id(customer_id)
-        if not wallet.can_deduct(total_amount):
-            raise ValueError("Insufficient balance")
-
+        if not wallet:
+            raise ValueError("Wallet not found")
         # Start transaction
         try:
             # Create order
@@ -81,6 +86,7 @@ class OrderService:
 
                 # Deduct stock
                 item_data["product"].deduct_stock(item_data["quantity"])
+                # item_data["product"].stock -= item_data["quantity"]
 
             # Deduct from wallet
             WalletService.deduct(
@@ -102,7 +108,6 @@ class OrderService:
 
     @staticmethod
     def get_order_by_id(order_id: str, user_id: str = None, role: str = None) -> Order:
-        """Get order by ID with access control"""
         order = Order.query.get(order_id)
         if not order:
             raise ValueError("Order not found")
@@ -116,14 +121,7 @@ class OrderService:
         return order
 
     @staticmethod
-    def get_orders(
-        user_id: str = None,
-        role: str = None,
-        status: str = None,
-        page: int = 1,
-        per_page: int = 20,
-    ):
-        """Get orders with filters"""
+    def get_orders(user_id: str = None, role: str = None, status: str = None, page: int = 1, per_page: int = 20,):
         query = Order.query
 
         if role == "customer":
@@ -166,20 +164,21 @@ class OrderService:
     @staticmethod
     def cancel_order(order_id: str, customer_id: str) -> Order:
         """Cancel order and refund"""
-        order = Order.query.filter_by(id=order_id, customer_id=customer_id).first()
-        if not order:
-            raise ValueError("Order not found")
-
-        if not order.can_cancel():
-            raise ValueError("Order cannot be cancelled")
-
         try:
+            order = Order.query.filter_by(id=order_id, customer_id=customer_id).with_for_update().first()
+            if not order:
+                raise ValueError("Order not found")
+
+            if not order.can_cancel():
+                raise ValueError("Order cannot be cancelled")
+
             # Update order status
             order.status = OrderStatus.CANCELLED
 
             # Restore stock
             for item in order.items:
-                item.product.add_stock(item.quantity)
+                Product.query.filter_by(id=item.product_id).update({"stock": Product.stock + item.quantity}) # direct update
+                # item.product.add_stock(item.quantity)
 
             # Refund to wallet
             if order.payment_status == PaymentStatus.PAID:
@@ -189,6 +188,7 @@ class OrderService:
                     order.total_amount,
                     order.id,
                     f"Refund for cancelled order {order.order_number}",
+                    commit = False
                 )
                 order.payment_status = PaymentStatus.REFUNDED
 

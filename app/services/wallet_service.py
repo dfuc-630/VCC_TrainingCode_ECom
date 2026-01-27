@@ -15,7 +15,6 @@ class WalletService:
 
     @staticmethod
     def deposit(wallet_id: str, amount: Decimal, description: str = None) -> tuple[Wallet, WalletTransaction]:
-        """Deposit money to wallet"""
         try:
             wallet = (
                 db.session.query(Wallet)
@@ -50,13 +49,17 @@ class WalletService:
             raise
 
     @staticmethod
-    def deduct(
-        wallet_id: str, amount: Decimal, order_id: str = None, description: str = None
-    ) -> WalletTransaction:
-        """Deduct money from wallet"""
-        wallet = Wallet.query.get(wallet_id)
+    def deduct(wallet_id: str, amount: Decimal, order_id: str = None, description: str = None) -> WalletTransaction:
+        wallet = (
+            db.session.query(Wallet)
+            .filter_by(id=wallet_id)
+            .with_for_update()
+            .first()
+        )
         if not wallet:
             raise ValueError("Wallet not found")
+        if wallet.balance < amount:
+            raise ValueError("Insufficient balance")
 
         balance_before = wallet.balance
         wallet.deduct_balance(amount)
@@ -78,11 +81,13 @@ class WalletService:
         return transaction
 
     @staticmethod
-    def refund(
-        wallet_id: str, amount: Decimal, order_id: str = None, description: str = None
-    ) -> WalletTransaction:
-        """Refund money to wallet"""
-        wallet = Wallet.query.get(wallet_id)
+    def refund(wallet_id: str, amount: Decimal, order_id: str = None, description: str = None, commit: bool = True) -> WalletTransaction:
+        wallet = (
+            db.session.query(Wallet)
+            .filter_by(id=wallet_id)
+            .with_for_update()
+            .first()
+        )
         if not wallet:
             raise ValueError("Wallet not found")
 
@@ -101,7 +106,8 @@ class WalletService:
         )
 
         db.session.add(transaction)
-        db.session.commit()
+        if commit is True:
+            db.session.commit()
 
         return transaction
 
