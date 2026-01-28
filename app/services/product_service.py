@@ -8,9 +8,7 @@ class ProductService:
     """Product service handling product operations"""
 
     @staticmethod
-    def create_product(
-        seller_id: str, name: str, current_price: Decimal, **kwargs
-    ) -> Product:
+    def create_product(seller_id: str, name: str, current_price: Decimal, **kwargs) -> Product:
         """Create new product"""
         slug = slugify(name)
 
@@ -48,7 +46,13 @@ class ProductService:
 
         # Update slug if name changed
         if "name" in kwargs and kwargs["name"] != product.name:
-            kwargs["slug"] = slugify(kwargs["name"])
+            slug = slugify(kwargs["name"])
+            base_slug = slug
+            counter = 1
+            while Product.query.filter_by(slug=slug).first():
+                slug = f"{base_slug}-{counter}"
+                counter += 1
+            kwargs["slug"] = slug
 
         product.update(**kwargs)
         return product
