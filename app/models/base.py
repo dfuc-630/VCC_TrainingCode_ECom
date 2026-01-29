@@ -49,7 +49,7 @@ class SoftDeleteMixin:
     deleted_at = db.Column(db.DateTime, nullable=True)
 
     def soft_delete(self):
-        self.deleted_at = lambda: datetime.now(timezone.utc)()
+        self.deleted_at = datetime.now(timezone.utc)
         db.session.commit()
 
     def restore(self):

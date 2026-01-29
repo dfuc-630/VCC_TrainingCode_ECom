@@ -30,9 +30,9 @@ class AuthService:
         # print("user.id: ", user.id)
 
         # Create wallet for customer
-        if role == "customer":
-            wallet = Wallet(user_id=user.id)
-            db.session.add(wallet)
+        # if role == "customer":
+        wallet = Wallet(user_id=user.id)
+        db.session.add(wallet)
 
         db.session.commit()
         return user

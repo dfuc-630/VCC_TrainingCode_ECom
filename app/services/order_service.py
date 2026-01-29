@@ -3,6 +3,7 @@ from typing import Any
 
 from app.models.order import Order, OrderItem
 from app.models.product import Product
+from app.models.user import User
 from app.services.wallet_service import WalletService
 from app.services.product_service import ProductService
 from app.extensions import db
@@ -99,7 +100,10 @@ class OrderService:
                 
                 # direct deduct on locked object
                 item["product"].deduct_stock(item["quantity"])
-
+                seller_id = item["product"].seller_id
+                seller = User.query.filter_by(id=seller_id).first()
+                seller.wallet.add_balance(item["subtotal"])
+                db.session.add(seller)
             # Pay
             WalletService.deduct(
                 wallet_id=wallet.id,
