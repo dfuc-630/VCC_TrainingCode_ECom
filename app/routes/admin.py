@@ -13,48 +13,6 @@ from app.extensions import db
 admin_bp = Blueprint("admin", __name__)
 
 
-# User management
-@admin_bp.route("/users", methods=["GET"])
-@jwt_required()
-@role_required(UserRole.ADMIN)
-def get_users(current_user):
-    """Get all users"""
-    role = request.args.get("role")
-    page, per_page = validate_pagination()
-
-    query = User.query.filter_by(deleted_at=None)
-
-    if role:
-        query = query.filter_by(role=role)
-
-    pagination = query.order_by(User.created_at.desc()).paginate(
-        page=page, per_page=per_page, error_out=False
-    )
-
-    return (
-        jsonify(
-            {
-                "users": [u.to_dict() for u in pagination.items],
-                "total": pagination.total,
-                "page": page,
-                "pages": pagination.pages,
-            }
-        ),
-        200,
-    )
-
-
-@admin_bp.route("/users/<user_id>", methods=["GET"])
-@jwt_required()
-@role_required(UserRole.ADMIN)
-def get_user(user_id, current_user):
-    """Get user detail"""
-    user = User.query.get(user_id)
-    if not user or user.is_deleted:
-        return jsonify({"error": "User not found"}), 404
-
-    return jsonify({"user": user.to_dict()}), 200
-
 
 # Product management
 @admin_bp.route("/products", methods=["GET"])

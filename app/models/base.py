@@ -30,7 +30,7 @@ class BaseModel(db.Model):
         for key, value in kwargs.items():
             if hasattr(self, key):
                 setattr(self, key, value)
-        self.updated_at = lambda: datetime.now(timezone.utc)()
+        self.updated_at = datetime.now(timezone.utc)
         db.session.commit()
         return self
 

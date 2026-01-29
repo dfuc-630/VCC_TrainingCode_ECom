@@ -26,6 +26,8 @@ class AuthService:
         )
         user.set_password(password)
         db.session.add(user)
+        db.session.flush()
+        # print("user.id: ", user.id)
 
         # Create wallet for customer
         if role == "customer":

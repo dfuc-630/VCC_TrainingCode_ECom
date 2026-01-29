@@ -9,7 +9,7 @@ from app.extensions import db
 from app.utils.helpers import generate_order_number
 from decimal import Decimal
 from app.enums import OrderStatus, PaymentStatus
-from sqlalchemy import ord_
+from sqlalchemy import or_
 
 class OrderService:
     @staticmethod
