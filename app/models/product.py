@@ -25,7 +25,7 @@ class Product(BaseModel, SoftDeleteMixin):
     original_price = db.Column(db.Numeric(15, 2))
     current_price = db.Column(db.Numeric(15, 2), nullable=False)
     stock_quantity = db.Column(db.Integer, default=0)
-    version = db.Column(db.Integer, default=0, nullable=False)  # Optimistic locking
+    version = db.Column(db.Integer, default=0, nullable=False) 
     image_url = db.Column(db.String(500))
     is_active = db.Column(db.Boolean, default=True)
 

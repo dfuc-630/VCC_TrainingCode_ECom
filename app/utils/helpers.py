@@ -12,10 +12,8 @@ def generate_order_number() -> str:
 
 
 def slugify(text: str) -> str:
-    """Generate URL-friendly slug"""
     return python_slugify(text)
 
 
 def allowed_file(filename: str, allowed_extensions: set) -> bool:
-    """Check if file extension is allowed"""
     return "." in filename and filename.rsplit(".", 1)[1].lower() in allowed_extensions

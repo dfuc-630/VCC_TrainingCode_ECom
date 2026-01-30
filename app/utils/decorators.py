@@ -5,8 +5,6 @@ from app.models.user import User
 
 
 def role_required(*roles):
-    """Decorator to check if user has required role"""
-
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):

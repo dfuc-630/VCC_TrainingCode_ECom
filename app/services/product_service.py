@@ -5,11 +5,8 @@ from decimal import Decimal
 
 
 class ProductService:
-    """Product service handling product operations"""
-
     @staticmethod
     def create_product(seller_id: str, name: str, current_price: Decimal, **kwargs) -> Product:
-        """Create new product"""
         slug = slugify(name)
 
         # Ensure unique slug
@@ -39,7 +36,6 @@ class ProductService:
 
     @staticmethod
     def update_product(product_id: str, seller_id: str, **kwargs) -> Product:
-        """Update product"""
         product = Product.query.filter_by(id=product_id, seller_id=seller_id).first()
         if not product or product.is_deleted:
             raise ValueError("Product not found")
@@ -59,7 +55,6 @@ class ProductService:
 
     @staticmethod
     def delete_product(product_id: str, seller_id: str):
-        """Soft delete product"""
         product = Product.query.filter_by(id=product_id, seller_id=seller_id).first()
         if not product or product.is_deleted:
             raise ValueError("Product not found")
@@ -69,7 +64,6 @@ class ProductService:
 
     @staticmethod
     def get_product_by_id(product_id: str) -> Product:
-        """Get product by ID"""
         product = Product.query.get(product_id)
         if not product or product.is_deleted:
             raise ValueError("Product not found")
@@ -78,7 +72,6 @@ class ProductService:
     @staticmethod
     def search_products(search: str = None, category_id: str = None,
     seller_id: str = None, is_active: bool = True, page: int = 1, per_page: int = 20,):
-        """Search products with filters"""
         query = Product.query.filter_by(deleted_at=None)
 
         if is_active is not None:
