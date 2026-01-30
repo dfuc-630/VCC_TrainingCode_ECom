@@ -15,10 +15,14 @@ def role_required(*roles):
             user = User.query.get(user_id)
 
             if not user or not user.is_active or user.is_deleted:
-                return jsonify({"error": "User not found or inactive"}), 403
+                response = jsonify({"error": "User not found or inactive"})
+                response.status_code = 403
+                return response
 
             if user.role not in roles:
-                return jsonify({"error": "Insufficient permissions"}), 403
+                response = jsonify({"error": "Insufficient permissions"})
+                response.status_code = 403
+                return response
 
             # Pass user to route handler
             kwargs["current_user"] = user

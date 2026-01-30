@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, jsonify
 from .extensions import db, migrate, jwt, ma
 from .config import Config
 from app.utils.error_handlers import register_error_handlers
@@ -23,6 +23,21 @@ def create_app():
 
     register_blueprints(app)
     register_error_handlers(app)
+    
+    # Register JWT error handlers
+    from flask_jwt_extended.exceptions import JWTDecodeError, NoAuthorizationError, InvalidHeaderError
+    
+    @jwt.expired_token_loader
+    def expired_token_callback(jwt_header, jwt_payload):
+        return jsonify({"error": "Token has expired"}), 401
+    
+    @jwt.invalid_token_loader
+    def invalid_token_callback(error):
+        return jsonify({"error": "Invalid token"}), 422
+    
+    @jwt.unauthorized_loader
+    def missing_token_callback(error):
+        return jsonify({"error": "Missing authorization header"}), 401
 
     @app.route("/health")
     def health():

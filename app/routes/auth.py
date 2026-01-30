@@ -32,7 +32,11 @@ def login():
         result = AuthService.login_user(**data)
         return jsonify(result), 200
     except ValueError as e:
-        return jsonify({"error": str(e)}), 401
+        error_msg = str(e)
+        # Check if account is deactivated
+        if "deactivated" in error_msg.lower():
+            return jsonify({"error": error_msg}), 403
+        return jsonify({"error": error_msg}), 401
 
 
 @auth_bp.route("/refresh", methods=["POST"])

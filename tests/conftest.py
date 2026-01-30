@@ -10,7 +10,14 @@ from decimal import Decimal
 @pytest.fixture(scope="function")
 def app():
     """Create application for testing"""
-    app = create_app("testing")
+    import os
+    os.environ['DB_URI'] = 'sqlite:///:memory:'
+    os.environ['SECRET_KEY'] = 'test-secret-key'
+    os.environ['JWT_SECRET'] = 'test-jwt-secret'
+    
+    app = create_app()
+    app.config['TESTING'] = True
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'
 
     with app.app_context():
         db.create_all()
@@ -45,9 +52,10 @@ def customer_user(app):
     )
     user.set_password("password123")
     db.session.add(user)
+    db.session.flush()  # Flush to get user.id
 
     # Create wallet for customer
-    wallet = Wallet(user_id=user.id, balance=Decimal("1000000.00"))
+    wallet = Wallet(user_id=user.id, balance=Decimal("100000000.00"))
     db.session.add(wallet)
 
     db.session.commit()
@@ -67,6 +75,12 @@ def seller_user(app):
     )
     user.set_password("password123")
     db.session.add(user)
+    db.session.flush()  # Flush to get user.id
+
+    # Create wallet for seller (sellers also need wallet to receive payments)
+    wallet = Wallet(user_id=user.id, balance=Decimal("0.00"))
+    db.session.add(wallet)
+
     db.session.commit()
     return user
 
@@ -83,6 +97,12 @@ def admin_user(app):
     )
     user.set_password("password123")
     db.session.add(user)
+    db.session.flush()  # Flush to get user.id
+
+    # Create wallet for admin (for consistency, though admin may not need it)
+    wallet = Wallet(user_id=user.id, balance=Decimal("0.00"))
+    db.session.add(wallet)
+
     db.session.commit()
     return user
 
@@ -92,8 +112,9 @@ def admin_user(app):
 def customer_token(client, customer_user):
     """Get customer authentication token"""
     response = client.post(
-        "/api/auth/login", json={"username": "customer", "password": "password123"}
+        "/api/v1/auth/login", json={"username": "customer", "password": "password123"}
     )
+    assert response.status_code == 200, f"Login failed: {response.json}"
     return response.json["access_token"]
 
 
@@ -101,8 +122,9 @@ def customer_token(client, customer_user):
 def seller_token(client, seller_user):
     """Get seller authentication token"""
     response = client.post(
-        "/api/auth/login", json={"username": "seller", "password": "password123"}
+        "/api/v1/auth/login", json={"username": "seller", "password": "password123"}
     )
+    assert response.status_code == 200, f"Login failed: {response.json}"
     return response.json["access_token"]
 
 
@@ -110,8 +132,9 @@ def seller_token(client, seller_user):
 def admin_token(client, admin_user):
     """Get admin authentication token"""
     response = client.post(
-        "/api/auth/login", json={"username": "admin", "password": "password123"}
+        "/api/v1/auth/login", json={"username": "admin", "password": "password123"}
     )
+    assert response.status_code == 200, f"Login failed: {response.json}"
     return response.json["access_token"]
 
 

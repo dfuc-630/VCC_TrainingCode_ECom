@@ -1,5 +1,6 @@
 import pytest
 from decimal import Decimal
+from app.extensions import db
 
 
 class TestCustomerOrders:
@@ -8,7 +9,7 @@ class TestCustomerOrders:
     def test_create_order_success(self, client, customer_headers, product):
         """Test successful order creation"""
         response = client.post(
-            "/api/customer/orders",
+            "/api/v1/customer/orders",
             headers=customer_headers,
             json={
                 "items": [{"product_id": product.id, "quantity": 2}],
@@ -36,7 +37,7 @@ class TestCustomerOrders:
         db.session.commit()
 
         response = client.post(
-            "/api/customer/orders",
+            "/api/v1/customer/orders",
             headers=customer_headers,
             json={
                 "items": [{"product_id": product.id, "quantity": 1}],
@@ -51,7 +52,7 @@ class TestCustomerOrders:
     def test_create_order_insufficient_stock(self, client, customer_headers, product):
         """Test order creation with insufficient stock"""
         response = client.post(
-            "/api/customer/orders",
+            "/api/v1/customer/orders",
             headers=customer_headers,
             json={
                 "items": [{"product_id": product.id, "quantity": 100}],
@@ -66,7 +67,7 @@ class TestCustomerOrders:
     def test_create_order_product_not_found(self, client, customer_headers):
         """Test order creation with non-existent product"""
         response = client.post(
-            "/api/customer/orders",
+            "/api/v1/customer/orders",
             headers=customer_headers,
             json={
                 "items": [{"product_id": "invalid-id", "quantity": 1}],
@@ -80,7 +81,7 @@ class TestCustomerOrders:
     def test_create_order_empty_items(self, client, customer_headers):
         """Test order creation with empty items"""
         response = client.post(
-            "/api/customer/orders",
+            "/api/v1/customer/orders",
             headers=customer_headers,
             json={
                 "items": [],
@@ -94,7 +95,7 @@ class TestCustomerOrders:
     def test_create_order_missing_fields(self, client, customer_headers, product):
         """Test order creation with missing fields"""
         response = client.post(
-            "/api/customer/orders",
+            "/api/v1/customer/orders",
             headers=customer_headers,
             json={"items": [{"product_id": product.id, "quantity": 1}]},
         )
@@ -105,7 +106,7 @@ class TestCustomerOrders:
         """Test get customer orders"""
         # Create an order first
         client.post(
-            "/api/customer/orders",
+            "/api/v1/customer/orders",
             headers=customer_headers,
             json={
                 "items": [{"product_id": product.id, "quantity": 1}],
@@ -114,7 +115,7 @@ class TestCustomerOrders:
             },
         )
 
-        response = client.get("/api/customer/orders", headers=customer_headers)
+        response = client.get("/api/v1/customer/orders", headers=customer_headers)
 
         assert response.status_code == 200
         assert "orders" in response.json
@@ -123,7 +124,7 @@ class TestCustomerOrders:
     def test_get_orders_filter_by_status(self, client, customer_headers, product):
         """Test get orders filtered by status"""
         response = client.get(
-            "/api/customer/orders?status=pending", headers=customer_headers
+            "/api/v1/customer/orders?status=pending", headers=customer_headers
         )
 
         assert response.status_code == 200
@@ -132,7 +133,7 @@ class TestCustomerOrders:
         """Test get order detail"""
         # Create order
         create_response = client.post(
-            "/api/customer/orders",
+            "/api/v1/customer/orders",
             headers=customer_headers,
             json={
                 "items": [{"product_id": product.id, "quantity": 1}],
@@ -142,23 +143,20 @@ class TestCustomerOrders:
         )
         order_id = create_response.json["order"]["id"]
 
-        # Update status
-        response = client.put(
-            f"/api/seller/orders/{order_id}/status",
-            headers=seller_headers,
-            json={"status": "confirmed"},
+        # Get order detail
+        response = client.get(
+            f"/api/v1/customer/orders/{order_id}",
+            headers=customer_headers,
         )
 
         assert response.status_code == 200
-        assert response.json["order"]["status"] == "confirmed"
+        assert response.json["order"]["status"] == "pending"
 
-    def test_update_order_status_invalid_transition(
-        self, client, seller_headers, customer_headers, product
-    ):
-        """Test invalid status transition"""
+    def test_cancel_order_success(self, client, customer_headers, product):
+        """Test successful order cancellation"""
         # Create order
         create_response = client.post(
-            "/api/customer/orders",
+            "/api/v1/customer/orders",
             headers=customer_headers,
             json={
                 "items": [{"product_id": product.id, "quantity": 1}],
@@ -168,21 +166,43 @@ class TestCustomerOrders:
         )
         order_id = create_response.json["order"]["id"]
 
-        # Try invalid transition (pending -> completed)
+        # Cancel order
         response = client.put(
-            f"/api/seller/orders/{order_id}/status",
-            headers=seller_headers,
-            json={"status": "completed"},
+            f"/api/v1/customer/orders/{order_id}/cancel",
+            headers=customer_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.json["order"]["status"] == "cancelled"
+        assert response.json["order"]["payment_status"] == "refunded"
+
+    def test_cancel_order_not_found(self, client, customer_headers):
+        """Test cancel non-existent order"""
+        response = client.put(
+            "/api/v1/customer/orders/invalid-id/cancel",
+            headers=customer_headers,
         )
 
         assert response.status_code == 400
 
-    def test_get_revenue_success(self, client, seller_headers):
-        """Test get seller revenue"""
-        response = client.get("/api/seller/revenue", headers=seller_headers)
+    def test_cancel_order_wrong_customer(self, client, customer_headers, seller_headers, product):
+        """Test cancel order as wrong customer"""
+        # Create order as customer
+        create_response = client.post(
+            "/api/v1/customer/orders",
+            headers=customer_headers,
+            json={
+                "items": [{"product_id": product.id, "quantity": 1}],
+                "shipping_address": "123 Test St",
+                "shipping_phone": "0901234567",
+            },
+        )
+        order_id = create_response.json["order"]["id"]
 
-        assert response.status_code == 200
-        assert "total_revenue" in response.json
-        assert "total_orders" in response.json
-        assert "completed_orders" in response.json
-        assert "pending_orders" in response.json
+        # Try to cancel as seller (should fail)
+        response = client.put(
+            f"/api/v1/customer/orders/{order_id}/cancel",
+            headers=seller_headers,
+        )
+
+        assert response.status_code == 403

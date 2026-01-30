@@ -6,7 +6,7 @@ class TestSellerProducts:
 
     def test_get_products_success(self, client, seller_headers, product):
         """Test get seller's products"""
-        response = client.get("/api/seller/products", headers=seller_headers)
+        response = client.get("/api/v1/seller/products", headers=seller_headers)
 
         assert response.status_code == 200
         assert "products" in response.json
@@ -15,7 +15,7 @@ class TestSellerProducts:
     def test_create_product_success(self, client, seller_headers, category):
         """Test create product"""
         response = client.post(
-            "/api/seller/products",
+            "/api/v1/seller/products",
             headers=seller_headers,
             json={
                 "name": "Samsung Galaxy S24",
@@ -36,7 +36,7 @@ class TestSellerProducts:
     def test_create_product_missing_fields(self, client, seller_headers):
         """Test create product with missing fields"""
         response = client.post(
-            "/api/seller/products",
+            "/api/v1/seller/products",
             headers=seller_headers,
             json={"name": "Test Product"},
         )
@@ -46,7 +46,7 @@ class TestSellerProducts:
     def test_create_product_wrong_role(self, client, customer_headers):
         """Test create product as customer (should fail)"""
         response = client.post(
-            "/api/seller/products",
+            "/api/v1/seller/products",
             headers=customer_headers,
             json={
                 "name": "Test Product",
@@ -60,7 +60,7 @@ class TestSellerProducts:
     def test_get_product_detail_success(self, client, seller_headers, product):
         """Test get product detail"""
         response = client.get(
-            f"/api/seller/products/{product.id}", headers=seller_headers
+            f"/api/v1/seller/products/{product.id}", headers=seller_headers
         )
 
         assert response.status_code == 200
@@ -69,7 +69,7 @@ class TestSellerProducts:
     def test_update_product_success(self, client, seller_headers, product):
         """Test update product"""
         response = client.put(
-            f"/api/seller/products/{product.id}",
+            f"/api/v1/seller/products/{product.id}",
             headers=seller_headers,
             json={
                 "name": "iPhone 15 Pro Max Updated",
@@ -85,7 +85,7 @@ class TestSellerProducts:
     def test_update_product_not_found(self, client, seller_headers):
         """Test update non-existent product"""
         response = client.put(
-            "/api/seller/products/invalid-id",
+            "/api/v1/seller/products/invalid-id",
             headers=seller_headers,
             json={"name": "Updated"},
         )
@@ -95,7 +95,7 @@ class TestSellerProducts:
     def test_delete_product_success(self, client, seller_headers, product):
         """Test delete product (soft delete)"""
         response = client.delete(
-            f"/api/seller/products/{product.id}", headers=seller_headers
+            f"/api/v1/seller/products/{product.id}", headers=seller_headers
         )
 
         assert response.status_code == 200
@@ -109,7 +109,7 @@ class TestSellerProducts:
     def test_delete_product_not_found(self, client, seller_headers):
         """Test delete non-existent product"""
         response = client.delete(
-            "/api/seller/products/invalid-id", headers=seller_headers
+            "/api/v1/seller/products/invalid-id", headers=seller_headers
         )
 
         assert response.status_code == 404

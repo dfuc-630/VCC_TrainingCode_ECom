@@ -102,6 +102,13 @@ class OrderService:
                 item["product"].deduct_stock(item["quantity"])
                 seller_id = item["product"].seller_id
                 seller = User.query.filter_by(id=seller_id).first()
+                
+                # Ensure seller has wallet (create if not exists)
+                if not seller.wallet:
+                    from app.models.wallet import Wallet
+                    seller.wallet = Wallet(user_id=seller.id, balance=Decimal("0.00"))
+                    db.session.add(seller.wallet)
+                
                 seller.wallet.add_balance(item["subtotal"])
                 db.session.add(seller)
             # Pay
@@ -210,7 +217,7 @@ class OrderService:
             products_map = {p.id: p for p in products}
 
             for item in order.items:
-                products_map[item.product_id].stock += item.quantity
+                products_map[item.product_id].stock_quantity += item.quantity
 
             # Refund to wallet
             if order.payment_status == PaymentStatus.PAID:

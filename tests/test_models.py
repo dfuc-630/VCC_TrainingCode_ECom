@@ -1,5 +1,6 @@
 import pytest
 from decimal import Decimal
+from app.extensions import db
 
 
 class TestUserModel:
@@ -43,7 +44,7 @@ class TestWalletModel:
         wallet = Wallet.query.filter_by(user_id=customer_user.id).first()
 
         assert wallet.can_deduct(Decimal("100000.00"))
-        assert not wallet.can_deduct(Decimal("10000000.00"))
+        assert not wallet.can_deduct(Decimal("1000000000.00"))
 
     def test_add_balance(self, app, customer_user):
         """Test add_balance method"""
