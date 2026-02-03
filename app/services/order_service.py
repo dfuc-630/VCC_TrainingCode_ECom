@@ -11,7 +11,7 @@ from app.utils.helpers import generate_order_number
 from decimal import Decimal
 from app.enums import OrderStatus, PaymentStatus
 from sqlalchemy import or_
-
+from flask import jsonify
 class OrderService:
     @staticmethod
     def create_order(customer_id: str, items_data: list, shipping_address: str, shipping_phone: str) -> Order:
@@ -132,7 +132,89 @@ class OrderService:
 
     @staticmethod
     def create_order_V2(customer_id: str, items_data: list, shipping_address: str, shipping_phone: str) -> Order:
-        return None
+        if not items_data:
+            raise ValueError("Order must have at least one item")
+        product_ids = sorted(list(set[Any](item['product_id'] for item in items_data)))
+        try:
+            products_query = (
+                db.session.query(Product)
+                .filter(Product.id.in_(product_ids))
+                .all()
+            )
+            
+            # Change to dictionary for fast get
+            products_map = {p.id: p for p in products_query}
+            
+            if len(products_map) != len(product_ids):
+                raise ValueError("One or more products not found")
+
+            # Validate logic
+            total_amount = Decimal("0")
+            seller_id = None
+            validated_items = []
+
+            for item_data in items_data:
+                p_id = item_data["product_id"]
+                qty = item_data["quantity"]
+                product = products_map[p_id]
+
+                if qty <= 0:
+                    raise ValueError(f"Invalid quantity for {product.name}")
+
+                if not product.is_active:
+                    raise ValueError(f"Product {product.name} is not available")
+
+                if not product.has_stock(qty):
+                    raise ValueError(f"Insufficient stock for {product.name}")
+
+                if seller_id is None:
+                    seller_id = product.seller_id
+                elif seller_id != product.seller_id:
+                    raise ValueError("All products must be from the same seller") # Phase 1, can upgrade
+
+                subtotal = product.current_price * qty
+                total_amount += subtotal
+                
+                validated_items.append({
+                    "product": product,
+                    "quantity": qty,
+                    "price": product.current_price,
+                    "subtotal": subtotal
+                })
+
+            wallet = WalletService.get_wallet_by_user_id(customer_id)
+            if not wallet:
+                raise ValueError("Wallet not found")
+
+            # Create Order
+            order = Order(
+                order_number=generate_order_number(),
+                customer_id=customer_id,
+                seller_id=seller_id,
+                total_amount=total_amount,
+                shipping_address=shipping_address,
+                shipping_phone=shipping_phone,
+                status=OrderStatus.PENDING,
+                payment_status=PaymentStatus.UNPAID,
+            )
+            db.session.add(order)
+            db.session.flush()  # Get order.id
+
+            # Create OrderItems và deduct quantity (Atomic Update)
+            for item in validated_items:
+                order_item = OrderItem(
+                    order_id=order.id,
+                    product_id=item["product"].id,
+                    product_name=item["product"].name,
+                    price=item["price"],
+                    quantity=item["quantity"],
+                    subtotal=item["subtotal"],
+                )
+                db.session.add(order_item)
+            db.session.commit()  
+            return jsonify({"message": "Order created successfully", "order": order.to_dict()}), 201  
+        except Exception as e:
+            raise e
 
     @staticmethod
     def get_order_by_id(order_id: str, user_id: str = None, role: str = None) -> Order:
