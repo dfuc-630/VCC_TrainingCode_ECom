@@ -131,6 +131,10 @@ class OrderService:
             raise e
 
     @staticmethod
+    def create_order_V2(customer_id: str, items_data: list, shipping_address: str, shipping_phone: str) -> Order:
+        return None
+
+    @staticmethod
     def get_order_by_id(order_id: str, user_id: str = None, role: str = None) -> Order:
         order = Order.query.get(order_id)
         if not order:

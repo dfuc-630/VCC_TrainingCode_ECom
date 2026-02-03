@@ -1,7 +1,7 @@
 from app.models.base import BaseModel
 from app.extensions import db
 from decimal import Decimal
-from app.enums import OrderStatus, PaymentStatus
+from app.enums import OrderStatus, PaymentStatus, OrderItemStatus
 
 
 class Order(BaseModel):
@@ -63,7 +63,7 @@ class OrderItem(BaseModel):
     price = db.Column(db.Numeric(15, 2), nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
     subtotal = db.Column(db.Numeric(15, 2), nullable=False)
-
+    status = db.Column(db.Enum(OrderItemStatus, name="order_item_statuses"), default="pending")
     def calculate_subtotal(self):
         self.subtotal = self.price * self.quantity
         return self.subtotal

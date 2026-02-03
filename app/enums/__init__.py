@@ -27,3 +27,15 @@ class TransactionType(str, Enum):
     REFUND = "refund"
     REVENUE = "revenue"
     WITHDRAW = "withdraw"
+
+class OrderItemStatus(str, Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    SHIPPED = "shipped"
+    DELIVERED = "delivered"
+    CANCELLED = "cancelled"
+    RETURNED = "returned"
+    REFUNDED = "refunded"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    REFUND_REQUESTED = "refund_requested"
