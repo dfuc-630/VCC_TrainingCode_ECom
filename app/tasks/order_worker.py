@@ -1,10 +1,12 @@
 from app.models.order import Order, OrderItem
 from app.models.product import Product
+from app.models.wallet import Wallet
 from app.enums import OrderStatus, OrderItemStatus, PaymentStatus
 from app.extensions import db
 from app.services.wallet_service import WalletService
 from decimal import Decimal
 import time
+from sqlalchemy import update
 
 
 SLEEP_NO_JOB = 3
@@ -45,16 +47,10 @@ def order_items_ready(order):
 
 def has_failed_item(order):
 
-    failed_count = (
-        db.session.query(OrderItem)
-        .filter(
-            OrderItem.order_id == order.id,
-            OrderItem.status == OrderItemStatus.FAILED
-        )
-        .count()
-    )
-
-    return failed_count > 0
+    return db.session.query(OrderItem.id).filter(
+        OrderItem.order_id == order.id,
+        OrderItem.status == OrderItemStatus.FAILED
+    ).first() is not None
 
 
 def process_success_order(order):
@@ -72,7 +68,12 @@ def process_success_order(order):
     if not seller_wallet:
         raise Exception("Seller wallet not found")
 
-    seller_wallet.add_balance(order.total_amount)
+    # seller_wallet.add_balance(order.total_amount)
+    db.session.execute(
+        update(Wallet)
+        .where(Wallet.id == order.seller.wallet.id)
+        .values(balance=Wallet.balance + order.total_amount)
+    )
 
     (
         db.session.query(OrderItem)
@@ -103,18 +104,23 @@ def rollback_reserved_stock(order):
 
     product_ids = sorted({i.product_id for i in reserved_items})
 
-    products = (
-        db.session.query(Product)
-        .filter(Product.id.in_(product_ids))
-        .with_for_update()
-        .all()
-    )
+    # products = (
+    #     db.session.query(Product)
+    #     .filter(Product.id.in_(product_ids))
+    #     .with_for_update()
+    #     .all()
+    # )
 
-    products_map = {p.id: p for p in products}
+    # products_map = {p.id: p for p in products}
 
+    # for item in reserved_items:
+    #     products_map[item.product_id].stock_quantity += item.quantity
     for item in reserved_items:
-        products_map[item.product_id].stock_quantity += item.quantity
-
+        db.session.execute(
+            update(Product)
+            .where(Product.id == item.product_id)
+            .values(stock_quantity=Product.stock_quantity + item.quantity)
+        )
 
 def process_failed_order(order):
 
