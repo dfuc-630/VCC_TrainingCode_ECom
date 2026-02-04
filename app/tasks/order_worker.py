@@ -12,42 +12,35 @@ SLEEP_NO_JOB = 3
 
 def claim_order():
 
-    rows = (
+    order = (
         db.session.query(Order)
         .filter(Order.status == OrderStatus.PENDING)
         .order_by(Order.id)
-        .limit(1)
-        .update(
-            {Order.status: OrderStatus.PROCESSING},
-            synchronize_session=False
-        )
-    )
-
-    db.session.commit()
-
-    if rows == 0:
-        return None
-
-    return (
-        Order.query
-        .filter(Order.status == OrderStatus.PROCESSING)
-        .order_by(Order.id)
+        .with_for_update(skip_locked=True)
         .first()
     )
+
+    if not order:
+        return None
+
+    order.status = OrderStatus.PROCESSING
+    db.session.commit()
+
+    return order
 
 
 def order_items_ready(order):
 
-    pending_count = (
-        db.session.query(OrderItem)
+    pending_exists = (
+        db.session.query(OrderItem.id)
         .filter(
             OrderItem.order_id == order.id,
             OrderItem.status == OrderItemStatus.PENDING
         )
-        .count()
+        .first()
     )
 
-    return pending_count == 0
+    return pending_exists is None
 
 
 def has_failed_item(order):
@@ -174,3 +167,9 @@ def order_worker():
             db.session.rollback()
             print("OrderWorker error:", e)
             time.sleep(1)
+
+from app import create_app
+app = create_app()
+
+with app.app_context():
+    order_worker()

@@ -121,3 +121,9 @@ def order_item_worker():
             db.session.rollback()
             print("Worker error:", e)
             time.sleep(1)
+
+from app import create_app
+app = create_app()
+
+with app.app_context():
+    order_item_worker()

@@ -50,6 +50,22 @@ class WalletService:
 
     @staticmethod
     def deduct(wallet_id: str, amount: Decimal, order_id: str = None, description: str = None, commit: bool = True) -> WalletTransaction:
+        if not order_id:
+            raise ValueError("order_id is required for payment")
+
+        existed = (
+            db.session.query(WalletTransaction.id)
+            .filter(
+                WalletTransaction.order_id == order_id,
+                WalletTransaction.type == TransactionType.PAYMENT
+            )
+            .first()
+        )
+
+        if existed:
+            print(f"Payment already processed for order {order_id}")
+            return None
+
         wallet = (
             db.session.query(Wallet)
             .filter_by(id=wallet_id)
