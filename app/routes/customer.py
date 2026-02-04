@@ -140,7 +140,7 @@ def create_order(current_user): #checked
         return (
             jsonify(
                 {
-                    "message": "Order created successfully",
+                    "message": "Order created successfully, waiting for confirmed",
                     "order": order.to_dict(include_items=True),
                 }
             ),
