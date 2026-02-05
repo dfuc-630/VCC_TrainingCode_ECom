@@ -1,3 +1,4 @@
+from click import DateTime
 from app.models.base import BaseModel
 from app.extensions import db
 from decimal import Decimal
@@ -64,6 +65,7 @@ class OrderItem(BaseModel):
     quantity = db.Column(db.Integer, nullable=False)
     subtotal = db.Column(db.Numeric(15, 2), nullable=False)
     status = db.Column(db.Enum(OrderItemStatus, name="order_item_statuses"), default="pending")
+    processing_at = db.Column(DateTime, nullable=True)
     def calculate_subtotal(self):
         self.subtotal = self.price * self.quantity
         return self.subtotal

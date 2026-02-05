@@ -14,7 +14,7 @@ class WalletService:
         return wallet
 
     @staticmethod
-    def deposit(wallet_id: str, amount: Decimal, description: str = None) -> tuple[Wallet, WalletTransaction]:
+    def deposit(wallet_id: str, amount: Decimal, description: str = None, commit: bool = True) -> tuple[Wallet, WalletTransaction]:
         try:
             wallet = (
                 db.session.query(Wallet)
@@ -40,7 +40,8 @@ class WalletService:
             )
 
             db.session.add(transaction)
-            db.session.commit()
+            if commit is True:
+                db.session.commit()
 
             return wallet, transaction
 
@@ -136,3 +137,60 @@ class WalletService:
             .order_by(WalletTransaction.created_at.desc())
             .paginate(page=page, per_page=per_page, error_out=False)
         )
+
+    @staticmethod
+    def deduct_atomic(wallet: Wallet, amount: Decimal, order_id: str, description: str):
+        existed = (
+            db.session.query(WalletTransaction.id)
+            .filter(
+                WalletTransaction.order_id == order_id,
+                WalletTransaction.type == TransactionType.PAYMENT
+            )
+            .first()
+        )
+
+        if existed:
+            return
+
+        if wallet.balance < amount:
+            raise ValueError("Insufficient balance")
+
+        before = wallet.balance
+        wallet.deduct_balance(amount)
+
+        db.session.add(WalletTransaction(
+            wallet_id=wallet.id,
+            order_id=order_id,
+            type=TransactionType.PAYMENT,
+            amount=amount,
+            balance_before=before,
+            balance_after=wallet.balance,
+            description=description
+        ))
+    
+    @staticmethod
+    def deposit_atomic(wallet: Wallet, amount: Decimal, order_id: str, description: str):
+        existed = (
+            db.session.query(WalletTransaction.id)
+            .filter(
+                WalletTransaction.order_id == order_id,
+                WalletTransaction.type == TransactionType.DEPOSIT
+            )
+            .first()
+        )
+
+        if existed:
+            return
+
+        before = wallet.balance
+        wallet.add_balance(amount)
+
+        db.session.add(WalletTransaction(
+            wallet_id=wallet.id,
+            order_id=order_id,
+            type=TransactionType.DEPOSIT,
+            amount=amount,
+            balance_before=before,
+            balance_after=wallet.balance,
+            description=description
+        ))

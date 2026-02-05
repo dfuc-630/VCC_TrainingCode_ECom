@@ -1,173 +1,161 @@
 from app.models.order import Order, OrderItem
 from app.models.product import Product
-from app.models.wallet import Wallet
-from app.enums import OrderStatus, OrderItemStatus, PaymentStatus
+from app.models.wallet import Wallet, WalletTransaction
+from app.enums import OrderStatus, OrderItemStatus, PaymentStatus, TransactionType
 from app.extensions import db
 from app.services.wallet_service import WalletService
 from decimal import Decimal
 import time
-from sqlalchemy import update
+from sqlalchemy import update, and_, or_, not_
+from sqlalchemy.exc import IntegrityError
+from datetime import datetime, timedelta
+
 
 
 SLEEP_NO_JOB = 3
-
+PROCESSING_TIMEOUT = timedelta(minutes=2)
 
 def claim_order():
+    now = datetime.utcnow()
+
+    has_pending_items = (
+        db.session.query(OrderItem.id)
+        .filter(
+            OrderItem.order_id == Order.id,
+            OrderItem.status == OrderItemStatus.PENDING
+        )
+        .exists()
+    )
 
     order = (
         db.session.query(Order)
-        .filter(Order.status == OrderStatus.PENDING)
+        .filter(
+            not_(has_pending_items),
+            or_(
+                Order.status == OrderStatus.PENDING,
+                and_(
+                    Order.status == OrderStatus.PROCESSING,
+                    Order.processing_at < now - PROCESSING_TIMEOUT
+                )
+            )
+        )
         .order_by(Order.id)
         .with_for_update(skip_locked=True)
         .first()
     )
-
-    if not order:
-        return None
-
-    order.status = OrderStatus.PROCESSING
-    db.session.commit()
-
     return order
 
-
-def order_items_ready(order):
-
-    pending_exists = (
-        db.session.query(OrderItem.id)
-        .filter(
-            OrderItem.order_id == order.id,
-            OrderItem.status == OrderItemStatus.PENDING
-        )
-        .first()
-    )
-
-    return pending_exists is None
-
-
-def has_failed_item(order):
-
+def has_failed_item(order_id: str):
     return db.session.query(OrderItem.id).filter(
-        OrderItem.order_id == order.id,
+        OrderItem.order_id == order_id,
         OrderItem.status == OrderItemStatus.FAILED
     ).first() is not None
 
 
-def process_success_order(order):
+def lock_wallets(order):
+    wallet_ids = sorted([
+        order.customer.wallet.id,
+        order.seller.wallet.id
+    ])
 
-    WalletService.deduct(
-        wallet_id=order.customer.wallet.id,
+    wallets = (
+        db.session.query(Wallet)
+        .filter(Wallet.id.in_(wallet_ids))
+        .with_for_update()
+        .all()
+    )
+
+    return {w.id: w for w in wallets}
+
+
+def process_success(order):
+    if order.status in [OrderStatus.COMPLETED, OrderStatus.FAILED]:
+        return
+
+    wallets = lock_wallets(order)
+
+    WalletService.deduct_atomic(
+        wallet=wallets[order.customer.wallet.id],
         amount=order.total_amount,
         order_id=order.id,
-        description=f"Payment for order {order.order_number}",
-        commit=False
+        description=f"Payment for order {order.order_number}"
     )
 
-    seller_wallet = order.seller.wallet
-
-    if not seller_wallet:
-        raise Exception("Seller wallet not found")
-
-    # seller_wallet.add_balance(order.total_amount)
-    db.session.execute(
-        update(Wallet)
-        .where(Wallet.id == order.seller.wallet.id)
-        .values(balance=Wallet.balance + order.total_amount)
+    WalletService.deposit_atomic(
+        wallet=wallets[order.seller.wallet.id],
+        amount=order.total_amount,
+        order_id=order.id,
+        description=f"Income from order {order.order_number}"
     )
 
-    (
-        db.session.query(OrderItem)
-        .filter(
-            OrderItem.order_id == order.id,
-            OrderItem.status == OrderItemStatus.RESERVED
-        )
-        .update(
-            {OrderItem.status: OrderItemStatus.SUCCESS},
-            synchronize_session=False
-        )
+    db.session.query(OrderItem).filter(
+        OrderItem.order_id == order.id,
+        OrderItem.status == OrderItemStatus.RESERVED
+    ).update(
+        {OrderItem.status: OrderItemStatus.SUCCESS},
+        synchronize_session=False
     )
 
     order.status = OrderStatus.COMPLETED
     order.payment_status = PaymentStatus.PAID
 
 
-def rollback_reserved_stock(order):
+def rollback_stock(order_id: str):
+    items = db.session.query(OrderItem).filter(
+        OrderItem.order_id == order_id,
+        OrderItem.status == OrderItemStatus.RESERVED
+    ).all()
 
-    reserved_items = (
-        OrderItem.query
-        .filter(
-            OrderItem.order_id == order.id,
-            OrderItem.status == OrderItemStatus.RESERVED
+    for item in items:
+        product = (
+            db.session.query(Product)
+            .filter(Product.id == item.product_id)
+            .with_for_update()
+            .first()
         )
-        .all()
-    )
+        product.stock_quantity += item.quantity
 
-    product_ids = sorted({i.product_id for i in reserved_items})
 
-    # products = (
-    #     db.session.query(Product)
-    #     .filter(Product.id.in_(product_ids))
-    #     .with_for_update()
-    #     .all()
-    # )
+def process_failed(order):
+    if order.status in [OrderStatus.COMPLETED, OrderStatus.FAILED]:
+        return
 
-    # products_map = {p.id: p for p in products}
+    rollback_stock(order.id)
 
-    # for item in reserved_items:
-    #     products_map[item.product_id].stock_quantity += item.quantity
-    for item in reserved_items:
-        db.session.execute(
-            update(Product)
-            .where(Product.id == item.product_id)
-            .values(stock_quantity=Product.stock_quantity + item.quantity)
-        )
-
-def process_failed_order(order):
-
-    rollback_reserved_stock(order)
-
-    (
-        db.session.query(OrderItem)
-        .filter(OrderItem.order_id == order.id)
-        .update(
-            {OrderItem.status: OrderItemStatus.CANCELLED},
-            synchronize_session=False
-        )
+    db.session.query(OrderItem).filter(
+        OrderItem.order_id == order.id
+    ).update(
+        {OrderItem.status: OrderItemStatus.CANCELLED},
+        synchronize_session=False
     )
 
     order.status = OrderStatus.FAILED
+    order.payment_status = PaymentStatus.FAILED
 
 
 def order_worker():
-
-    print("OrderWorker started...")
+    print("OrderWorker started")
 
     while True:
-
         try:
-
             order = claim_order()
 
             if not order:
                 time.sleep(SLEEP_NO_JOB)
                 continue
 
-            print(f"Processing Order {order.id}")
-
-            if not order_items_ready(order):
-                order.status = OrderStatus.PENDING
-                db.session.commit()
-                time.sleep(1)
-                continue
-
-            if has_failed_item(order):
-                process_failed_order(order)
-                print(f"Order {order.id} FAILED")
+            if has_failed_item(order.id):
+                process_failed(order)
+                print(f"[Order {order.id}] FAILED")
             else:
-                process_success_order(order)
-                print(f"Order {order.id} COMPLETED")
+                process_success(order)
+                print(f"[Order {order.id}] COMPLETED")
 
             db.session.commit()
+
+        except IntegrityError:
+            db.session.rollback()
+            print("Idempotent conflict, safe to ignore")
 
         except Exception as e:
             db.session.rollback()

@@ -11,45 +11,43 @@ RETRY_DELAY = 0.1
 
 
 def claim_order_item():
-    rows = (
+    item = (
         db.session.query(OrderItem)
         .filter(OrderItem.status == OrderItemStatus.PENDING)
         .order_by(OrderItem.id)
-        .limit(1)
-        .update(
-            {OrderItem.status: OrderItemStatus.PROCESSING},
-            synchronize_session=False
-        )
-    )
-
-    db.session.commit()
-
-    if rows == 0:
-        return None
-
-    return (
-        OrderItem.query
-        .filter(OrderItem.status == OrderItemStatus.PROCESSING)
-        .order_by(OrderItem.id)
+        .with_for_update(skip_locked=True)
         .first()
     )
 
+    if not item:
+        return None
 
-def process_order_item(order_item) -> bool:
+    item.status = OrderItemStatus.PROCESSING
+    db.session.commit()
 
+    return item
+
+def try_reserve_stock(order_item) -> bool:
     for _ in range(RETRY_LIMIT):
 
-        product = Product.query.get(order_item.product_id)
+        product = (
+            db.session.query(Product)
+            .filter(Product.id == order_item.product_id)
+            .first()
+        )
 
         if not product:
+            return False
+
+        if product.stock_quantity < order_item.quantity:
             return False
 
         rows = (
             db.session.query(Product)
             .filter(
                 Product.id == product.id,
-                Product.stock_quantity >= order_item.quantity,
-                Product.version == product.version
+                Product.version == product.version,
+                Product.stock_quantity >= order_item.quantity
             )
             .update(
                 {
@@ -69,27 +67,10 @@ def process_order_item(order_item) -> bool:
     return False
 
 
-def finalize_order_item(order_item_id, success):
-
-    new_status = (
-        OrderItemStatus.RESERVED
-        if success
-        else OrderItemStatus.FAILED
+def finalize_order_item(order_item, success: bool):
+    order_item.status = (
+        OrderItemStatus.RESERVED if success else OrderItemStatus.FAILED
     )
-
-    (
-        db.session.query(OrderItem)
-        .filter(
-            OrderItem.id == order_item_id,
-            OrderItem.status == OrderItemStatus.PROCESSING
-        )
-        .update(
-            {OrderItem.status: new_status},
-            synchronize_session=False
-        )
-    )
-
-    db.session.commit()
 
 
 def order_item_worker():
@@ -97,29 +78,29 @@ def order_item_worker():
     print("OrderItemWorker started...")
 
     while True:
-
         try:
-
             order_item = claim_order_item()
 
             if not order_item:
                 time.sleep(SLEEP_NO_JOB)
                 continue
 
-            print(f"Processing OrderItem {order_item.id}")
+            print(f"[OrderItem {order_item.id}] processing")
 
-            success = process_order_item(order_item)
+            success = try_reserve_stock(order_item)
 
-            finalize_order_item(order_item.id, success)
+            finalize_order_item(order_item, success)
 
             if success:
-                print(f"OrderItem {order_item.id} RESERVED")
+                print(f"[OrderItem {order_item.id}] RESERVED")
             else:
-                print(f"OrderItem {order_item.id} FAILED")
+                print(f"[OrderItem {order_item.id}] FAILED")
+            
+            db.session.commit()
 
         except Exception as e:
             db.session.rollback()
-            print("Worker error:", e)
+            print("OrderItemWorker error:", e)
             time.sleep(1)
 
 from app import create_app
