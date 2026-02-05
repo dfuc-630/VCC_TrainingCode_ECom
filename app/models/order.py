@@ -1,4 +1,4 @@
-from click import DateTime
+from sqlalchemy import DateTime
 from app.models.base import BaseModel
 from app.extensions import db
 from decimal import Decimal
