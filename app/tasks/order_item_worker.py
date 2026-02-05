@@ -26,7 +26,7 @@ def claim_order_item():
                 )
             )
         )
-        .order_by(OrderItem.id)
+        .order_by(OrderItem.processing_at.nullsfirst(), OrderItem.id)
         .with_for_update(skip_locked=True)
         .first()
     )
