@@ -1,19 +1,31 @@
+from datetime import timedelta, datetime
 from app.models.order import OrderItem
 from app.models.product import Product
 from app.enums import OrderItemStatus
 from app.extensions import db
 import time
+from sqlalchemy import update, and_, or_, not_
 
 
 RETRY_LIMIT = 5
 SLEEP_NO_JOB = 2
 RETRY_DELAY = 0.1
-
+PROCESSING_TIMEOUT = timedelta(minutes=2)
+def now():
+    return datetime.utcnow()
 
 def claim_order_item():
     item = (
         db.session.query(OrderItem)
-        .filter(OrderItem.status == OrderItemStatus.PENDING)
+        .filter(
+            or_(
+                OrderItem.status == OrderItemStatus.PENDING,
+                and_(
+                    OrderItem.status == OrderItemStatus.PROCESSING,
+                    OrderItem.processing_at < now() - PROCESSING_TIMEOUT
+                )
+            )
+        )
         .order_by(OrderItem.id)
         .with_for_update(skip_locked=True)
         .first()
@@ -23,6 +35,7 @@ def claim_order_item():
         return None
 
     item.status = OrderItemStatus.PROCESSING
+    item.processing_at = now()
     db.session.commit()
 
     return item
@@ -68,6 +81,8 @@ def try_reserve_stock(order_item) -> bool:
 
 
 def finalize_order_item(order_item, success: bool):
+    if order_item.status in [OrderItemStatus.RESERVED, OrderItemStatus.FAILED]:
+        return
     order_item.status = (
         OrderItemStatus.RESERVED if success else OrderItemStatus.FAILED
     )
@@ -84,7 +99,6 @@ def order_item_worker():
             if not order_item:
                 time.sleep(SLEEP_NO_JOB)
                 continue
-
             print(f"[OrderItem {order_item.id}] processing")
 
             success = try_reserve_stock(order_item)

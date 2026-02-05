@@ -22,7 +22,7 @@ class Order(BaseModel):
     )
     shipping_address = db.Column(db.Text)
     shipping_phone = db.Column(db.String(20))
-
+    processing_at = db.Column(DateTime, nullable=True)
     # Relationships
     items = db.relationship(
         "OrderItem", backref="order", lazy="dynamic", cascade="all, delete-orphan"
