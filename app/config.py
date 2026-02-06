@@ -1,13 +1,20 @@
 import os
+from urllib.parse import quote_plus
 
-basedir = os.path.abspath(os.path.dirname(__file__))
+BASEDIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "secret")
 
+    DB_USER = os.getenv("DB_USER")
+    DB_PASSWORD = quote_plus(os.getenv("DB_PASSWORD", ""))
+    DB_HOST = os.getenv("DB_HOST")
+    DB_PORT = os.getenv("DB_PORT")
+    DB_NAME = os.getenv("DB_NAME")
+
     SQLALCHEMY_DATABASE_URI = (
-        os.getenv("DB_URI") or
-        "sqlite:///" + os.path.join(basedir, "db.sqlite")
+        f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}"
+        f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     )
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False

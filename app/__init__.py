@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+load_dotenv()
 from flask import Flask, jsonify
 from .extensions import db, migrate, jwt, ma
 from .config import Config

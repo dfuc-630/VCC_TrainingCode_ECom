@@ -10,6 +10,7 @@ from sqlalchemy import update, and_, or_, not_
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timedelta
 from sqlalchemy import select, exists
+from app.extensions import db
 
 
 SLEEP_NO_JOB = 3
@@ -156,7 +157,7 @@ def process_failed(order):
 
 def order_worker():
     print("OrderWorker started")
-
+    print("WORKER DB =", db.engine.url)
     while True:
         try:
             order = claim_order()

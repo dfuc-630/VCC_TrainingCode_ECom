@@ -9,11 +9,12 @@ class UserRole(str, Enum):
 
 class OrderStatus(str, Enum):
     PENDING = "pending"
+    PROCESSING = "processing"
     CONFIRMED = "confirmed"
     SHIPPING = "shipping"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
-
+    FAILED = "failed"
 
 class PaymentStatus(str, Enum):
     UNPAID = "unpaid"
