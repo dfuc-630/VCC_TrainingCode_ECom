@@ -11,10 +11,11 @@ from sqlalchemy.exc import IntegrityError
 from datetime import datetime, timedelta
 from sqlalchemy import select, exists
 from app.extensions import db
-
+from sqlalchemy.orm.exc import StaleDataError
 
 SLEEP_NO_JOB = 3
 PROCESSING_TIMEOUT = timedelta(minutes=2)
+MAX_RETRY = 5
 def now():
     return datetime.utcnow()
 
@@ -29,6 +30,7 @@ def claim_order():
     order = (
         db.session.query(Order)
         .filter(
+            Order.retry_count < MAX_RETRY,
             not_(has_pending_items),
             or_(
                 Order.status == OrderStatus.PENDING,
@@ -56,6 +58,19 @@ def lock_order_items(order_id):
         .with_for_update()
         .all()
     )
+
+def mark_order_failed_permanently(order, error: Exception):
+    order.retry_count += 1
+    order.last_error = str(error)
+
+    if order.retry_count >= MAX_RETRY:
+        print(f"Order {order.id} exceeded retry limit, marking FAILED")
+        process_failed(order)
+        print("done process_failed")
+    else:
+        print(f"Order {order.id} retry {order.retry_count}/{MAX_RETRY}")
+        order.status = OrderStatus.PENDING
+        order.processing_at = None
 
 def has_failed_item(order_id: str):
     return (
@@ -143,7 +158,7 @@ def process_failed(order):
         return
 
     rollback_stock(order.id)
-
+    print("has restock product")
     db.session.query(OrderItem).filter(
         OrderItem.order_id == order.id
     ).update(
@@ -151,9 +166,12 @@ def process_failed(order):
         synchronize_session=False
     )
 
-    order.status = OrderStatus.FAILED
-    order.payment_status = PaymentStatus.FAILED
+    order.status = OrderStatus.CANCELLED # TODO need FAILED
+    order.payment_status = PaymentStatus.UNPAID
 
+    # if commit is True:
+    #     db.commit
+    print("order.status: ", order.status)
 
 def order_worker():
     print("OrderWorker started")
@@ -169,6 +187,8 @@ def order_worker():
             db.session.commit()
 
             items = lock_order_items(order.id)
+            if not items:
+                raise Exception("Order has no items")
             statuses = {i.status for i in items}
 
             if OrderItemStatus.FAILED in statuses:
@@ -185,9 +205,21 @@ def order_worker():
         except IntegrityError:
             db.session.rollback()
             print("Idempotent conflict, safe to ignore")
-
+        except StaleDataError:
+            db.session.rollback()
+            print("Optimistic lock hit - order already handled")
         except Exception as e:
             db.session.rollback()
+            if order:
+                try:
+                    mark_order_failed_permanently(order, e)
+                    print("mark_order_failed_permanently")
+                    db.session.commit()
+                    print("done commit")
+                except Exception as inner:
+                    db.session.rollback()
+                    print("Retry handling failed:", inner)
+
             print("OrderWorker error:", e)
             time.sleep(1)
 

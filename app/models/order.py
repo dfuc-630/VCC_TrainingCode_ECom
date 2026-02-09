@@ -28,7 +28,8 @@ class Order(BaseModel):
         "OrderItem", backref="order", lazy="dynamic", cascade="all, delete-orphan"
     )
     wallet_transactions = db.relationship("WalletTransaction", backref="order")
-
+    retry_count = db.Column(db.Integer, nullable=False, default=0)
+    last_error = db.Column(db.Text)
     def calculate_total(self):
         total = sum(item.subtotal for item in self.items)
         self.total_amount = total

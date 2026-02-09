@@ -20,6 +20,7 @@ class PaymentStatus(str, Enum):
     UNPAID = "unpaid"
     PAID = "paid"
     REFUNDED = "refunded"
+    FAILED = "failed"
 
 
 class TransactionType(str, Enum):
