@@ -125,7 +125,7 @@ def process_success(order):
         OrderItem.order_id == order.id,
         OrderItem.status == OrderItemStatus.RESERVED
     ).update(
-        {OrderItem.status: OrderItemStatus.SUCCESS},
+        {OrderItem.status: OrderItemStatus.COMPLETED},
         synchronize_session=False
     )
 
@@ -193,9 +193,11 @@ def order_worker():
 
             if OrderItemStatus.FAILED in statuses:
                 process_failed(order)
+                print("order failed")
 
             elif statuses <= {OrderItemStatus.RESERVED}:
                 process_success(order)
+                print("order success")
 
             else:
                 raise Exception("Order has unfinished items")
