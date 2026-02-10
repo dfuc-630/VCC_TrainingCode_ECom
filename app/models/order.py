@@ -16,9 +16,9 @@ class Order(BaseModel):
         db.String(36), db.ForeignKey("users.id"), nullable=False, index=True
     )
     total_amount = db.Column(db.Numeric(15, 2), nullable=False)
-    status = db.Column(db.Enum(OrderStatus, name="order_statuses"), default="pending")
+    status = db.Column(db.Enum(OrderStatus, name="order_statuses"), default="pending", index=True)
     payment_status = db.Column(
-        db.Enum(PaymentStatus, name="payment_statuses"), default="unpaid"
+        db.Enum(PaymentStatus, name="payment_statuses"), default="unpaid", index=True
     )
     shipping_address = db.Column(db.Text)
     shipping_phone = db.Column(db.String(20))
@@ -65,7 +65,7 @@ class OrderItem(BaseModel):
     price = db.Column(db.Numeric(15, 2), nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
     subtotal = db.Column(db.Numeric(15, 2), nullable=False)
-    status = db.Column(db.Enum(OrderItemStatus, name="order_item_statuses"), default="pending")
+    status = db.Column(db.Enum(OrderItemStatus, name="order_item_statuses"), default="pending", index=True)
     processing_at = db.Column(DateTime, nullable=True)
     def calculate_subtotal(self):
         self.subtotal = self.price * self.quantity

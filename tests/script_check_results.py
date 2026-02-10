@@ -17,7 +17,7 @@ from app.models.order import Order
 from app.enums import OrderStatus
 
 # ========== CONFIGURATION - CHỈNH SỬA Ở ĐÂY ==========
-DATABASE_URL = "postgresql://flask_user:Phuc06032004%40@localhost:5432/flask_db"
+DATABASE_URL = "postgresql+psycopg2://flask_user:Phuc06032004%40@localhost:5432/flask_db_new"
 POLL_INTERVAL = 0.5  # giây giữa các lần check
 # ====================================================
 PROJECT_ROOT = os.path.abspath(
@@ -31,54 +31,86 @@ def get_db_session():
     return Session()
 
 
-def monitor_orders(orders, session):
-    """Poll database cho đến khi tất cả orders hoàn thành"""
+def monitor_orders(orders):
     print(f"📊 Bắt đầu monitor {len(orders)} orders...")
-    
+
     finished = []
     start_all = datetime.utcnow()
-    
     pending_orders = {o["order_id"]: o for o in orders}
     check_count = 0
+    not_found_orders = set()
+
+    engine = create_engine(DATABASE_URL)
+    Session = sessionmaker(bind=engine)
 
     while pending_orders:
-        for order_id in list(pending_orders.keys()):
-            order = session.get(Order, order_id)
-            
-            if order and order.status in [OrderStatus.COMPLETED.value, OrderStatus.FAILED.value]:
-                finished_at = datetime.utcnow()
-                created_at = datetime.fromisoformat(pending_orders[order_id]["created_at"])
-                
-                finished.append({
-                    "order_id": order_id,
-                    "status": order.status,
-                    "created_at": created_at.isoformat(),
-                    "finished_at": finished_at.isoformat(),
-                    "duration_ms": (finished_at - created_at).total_seconds() * 1000
-                })
-                
-                del pending_orders[order_id]
-                
-                if len(finished) % 100 == 0:
-                    print(f"   Progress: {len(finished)}/{len(orders)} orders hoàn thành")
-        
-        check_count += 1
-        if check_count % 20 == 0:
-            print(f"   Đang chờ {len(pending_orders)} orders...")
-        
-        time.sleep(POLL_INTERVAL)
-    
-    end_all = datetime.utcnow()
-    
-    print(f"✅ Tất cả orders đã hoàn thành!")
-    return finished, start_all, end_all
+        session = Session()
+        try:
+            for order_id in list(pending_orders.keys()):
+                order = (
+                    session.query(Order)
+                    .filter(Order.id == order_id)
+                    .execution_options(populate_existing=True)
+                    .first()
+                )
 
+                if not order:
+                    if order_id not in not_found_orders:
+                        not_found_orders.add(order_id)
+                        continue
+
+                    created_at = datetime.fromisoformat(
+                        pending_orders[order_id]["created_at"]
+                    )
+                    finished_at = datetime.utcnow()
+                    finished.append({
+                        "order_id": order_id,
+                        "status": "not_found",
+                        "created_at": created_at.isoformat(),
+                        "finished_at": finished_at.isoformat(),
+                        "duration_ms": (finished_at - created_at).total_seconds() * 1000,
+                    })
+                    del pending_orders[order_id]
+                    not_found_orders.discard(order_id)
+                    continue
+
+                if order.status in (
+                    OrderStatus.COMPLETED,
+                    OrderStatus.FAILED,
+                    OrderStatus.CANCELLED,
+                ):
+                    finished_at = datetime.utcnow()
+                    created_at = datetime.fromisoformat(
+                        pending_orders[order_id]["created_at"]
+                    )
+                    finished.append({
+                        "order_id": order_id,
+                        "status": order.status.value,
+                        "created_at": created_at.isoformat(),
+                        "finished_at": finished_at.isoformat(),
+                        "duration_ms": (finished_at - created_at).total_seconds() * 1000,
+                    })
+                    del pending_orders[order_id]
+                    not_found_orders.discard(order_id)
+                else:
+                    if check_count % 50 == 0:
+                        print(f"   Order {order_id} đang ở status: {order.status.value}")
+        finally:
+            session.close()
+
+        check_count += 1
+        time.sleep(POLL_INTERVAL)
+
+    print("✅ Tất cả orders đã hoàn thành!")
+    return finished, start_all, datetime.utcnow()
 
 def calculate_statistics(results, start_time, end_time):
     """Tính toán thống kê chi tiết"""
     total = len(results)
     success = sum(1 for r in results if r["status"] == "completed")
-    failed = total - success
+    failed = sum(1 for r in results if r["status"] in ["failed", "cancelled"])
+    not_found = sum(1 for r in results if r["status"] == "not_found")
+    other = total - success - failed - not_found
     
     total_time_ms = (end_time - start_time).total_seconds() * 1000
     total_time_seconds = total_time_ms / 1000
@@ -99,6 +131,8 @@ def calculate_statistics(results, start_time, end_time):
         "total_orders": total,
         "success_count": success,
         "failed_count": failed,
+        "not_found_count": not_found,
+        "other_count": other,
         "success_rate": round((success / total * 100), 2) if total > 0 else 0,
         "total_time_ms": round(total_time_ms, 2),
         "total_time_seconds": round(total_time_seconds, 2),
@@ -143,6 +177,10 @@ def export_csv(results, stats):
         writer.writerow(["Tổng số orders", stats["total_orders"]])
         writer.writerow(["Số orders thành công", stats["success_count"]])
         writer.writerow(["Số orders thất bại", stats["failed_count"]])
+        if stats.get("not_found_count", 0) > 0:
+            writer.writerow(["Số orders không tìm thấy", stats["not_found_count"]])
+        if stats.get("other_count", 0) > 0:
+            writer.writerow(["Số orders khác", stats["other_count"]])
         writer.writerow(["Tỷ lệ thành công (%)", stats["success_rate"]])
         writer.writerow([])
         writer.writerow(["Tổng thời gian (giây)", stats["total_time_seconds"]])
@@ -186,6 +224,10 @@ def print_summary(stats):
     print(f"Tổng số orders:           {stats['total_orders']}")
     print(f"Thành công:               {stats['success_count']} ({stats['success_rate']}%)")
     print(f"Thất bại:                 {stats['failed_count']}")
+    if stats.get('not_found_count', 0) > 0:
+        print(f"Không tìm thấy:           {stats['not_found_count']}")
+    if stats.get('other_count', 0) > 0:
+        print(f"Khác:                     {stats['other_count']}")
     print(f"")
     print(f"Tổng thời gian:           {stats['total_time_seconds']:.2f} giây")
     print(f"Thời gian TB/order:       {stats['avg_time_ms']:.2f} ms")
@@ -221,7 +263,7 @@ def main():
 
 
     # Bước 1: Load order IDs
-    input_file = "order_ids.json"
+    # input_file = "order_ids.json"
     try:
         with open(input_file, "r", encoding="utf-8") as f:
             orders = json.load(f)
@@ -249,7 +291,7 @@ def main():
     
     # Bước 3: Monitor orders cho đến khi hoàn thành
     try:
-        finished, start_time, end_time = monitor_orders(orders, session)
+        finished, start_time, end_time = monitor_orders(orders)
     except KeyboardInterrupt:
         print("\n⚠️  Đã dừng bởi người dùng")
         session.close()

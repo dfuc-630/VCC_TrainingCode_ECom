@@ -1,8 +1,8 @@
-"""empty message
+"""init db
 
-Revision ID: cc5023cfaa89
-Revises: 6f9356f2af36
-Create Date: 2026-01-30 09:47:37.219302
+Revision ID: 7a0bc71b5c10
+Revises: 
+Create Date: 2026-02-10 11:56:37.685868
 
 """
 from alembic import op
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'cc5023cfaa89'
-down_revision = '6f9356f2af36'
+revision = '7a0bc71b5c10'
+down_revision = None
 branch_labels = None
 depends_on = None
 
@@ -53,10 +53,13 @@ def upgrade():
     sa.Column('customer_id', sa.String(length=36), nullable=False),
     sa.Column('seller_id', sa.String(length=36), nullable=False),
     sa.Column('total_amount', sa.Numeric(precision=15, scale=2), nullable=False),
-    sa.Column('status', sa.Enum('PENDING', 'CONFIRMED', 'SHIPPING', 'COMPLETED', 'CANCELLED', name='order_statuses'), nullable=True),
-    sa.Column('payment_status', sa.Enum('UNPAID', 'PAID', 'REFUNDED', name='payment_statuses'), nullable=True),
+    sa.Column('status', sa.Enum('PENDING', 'PROCESSING', 'CONFIRMED', 'SHIPPING', 'COMPLETED', 'CANCELLED', 'FAILED', name='order_statuses'), nullable=True),
+    sa.Column('payment_status', sa.Enum('UNPAID', 'PAID', 'REFUNDED', 'FAILED', name='payment_statuses'), nullable=True),
     sa.Column('shipping_address', sa.Text(), nullable=True),
     sa.Column('shipping_phone', sa.String(length=20), nullable=True),
+    sa.Column('processing_at', sa.DateTime(), nullable=True),
+    sa.Column('retry_count', sa.Integer(), nullable=False),
+    sa.Column('last_error', sa.Text(), nullable=True),
     sa.Column('id', sa.String(length=36), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
@@ -67,7 +70,9 @@ def upgrade():
     with op.batch_alter_table('orders', schema=None) as batch_op:
         batch_op.create_index(batch_op.f('ix_orders_customer_id'), ['customer_id'], unique=False)
         batch_op.create_index(batch_op.f('ix_orders_order_number'), ['order_number'], unique=True)
+        batch_op.create_index(batch_op.f('ix_orders_payment_status'), ['payment_status'], unique=False)
         batch_op.create_index(batch_op.f('ix_orders_seller_id'), ['seller_id'], unique=False)
+        batch_op.create_index(batch_op.f('ix_orders_status'), ['status'], unique=False)
 
     op.create_table('products',
     sa.Column('seller_id', sa.String(length=36), nullable=False),
@@ -113,6 +118,8 @@ def upgrade():
     sa.Column('price', sa.Numeric(precision=15, scale=2), nullable=False),
     sa.Column('quantity', sa.Integer(), nullable=False),
     sa.Column('subtotal', sa.Numeric(precision=15, scale=2), nullable=False),
+    sa.Column('status', sa.Enum('PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'RETURNED', 'REFUNDED', 'COMPLETED', 'RESERVED', 'FAILED', 'REFUND_REQUESTED', name='order_item_statuses'), nullable=True),
+    sa.Column('processing_at', sa.DateTime(), nullable=True),
     sa.Column('id', sa.String(length=36), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=False),
     sa.Column('updated_at', sa.DateTime(), nullable=False),
@@ -123,6 +130,7 @@ def upgrade():
     with op.batch_alter_table('order_items', schema=None) as batch_op:
         batch_op.create_index(batch_op.f('ix_order_items_order_id'), ['order_id'], unique=False)
         batch_op.create_index(batch_op.f('ix_order_items_product_id'), ['product_id'], unique=False)
+        batch_op.create_index(batch_op.f('ix_order_items_status'), ['status'], unique=False)
 
     op.create_table('wallet_transactions',
     sa.Column('wallet_id', sa.String(length=36), nullable=False),
@@ -154,6 +162,7 @@ def downgrade():
 
     op.drop_table('wallet_transactions')
     with op.batch_alter_table('order_items', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_order_items_status'))
         batch_op.drop_index(batch_op.f('ix_order_items_product_id'))
         batch_op.drop_index(batch_op.f('ix_order_items_order_id'))
 
@@ -166,7 +175,9 @@ def downgrade():
 
     op.drop_table('products')
     with op.batch_alter_table('orders', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_orders_status'))
         batch_op.drop_index(batch_op.f('ix_orders_seller_id'))
+        batch_op.drop_index(batch_op.f('ix_orders_payment_status'))
         batch_op.drop_index(batch_op.f('ix_orders_order_number'))
         batch_op.drop_index(batch_op.f('ix_orders_customer_id'))
 

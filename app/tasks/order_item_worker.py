@@ -1,4 +1,6 @@
 from datetime import timedelta, datetime
+import multiprocessing
+import os
 from app.models.order import OrderItem
 from app.models.product import Product
 from app.enums import OrderItemStatus
@@ -90,7 +92,11 @@ def finalize_order_item(order_item, success: bool):
 
 def order_item_worker():
 
-    print("OrderItemWorker started...")
+    print(
+        f"[START] {multiprocessing.current_process().name} "
+        f"PID={os.getpid()}",
+        flush=True
+    )
 
     while True:
         try:
@@ -116,9 +122,3 @@ def order_item_worker():
             db.session.rollback()
             print("OrderItemWorker error:", e)
             time.sleep(1)
-
-from app import create_app
-app = create_app()
-
-with app.app_context():
-    order_item_worker()

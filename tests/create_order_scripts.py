@@ -15,31 +15,31 @@ API_BASE_URL = "http://127.0.0.1:5000/api/v1"
 USERNAME = "username5"
 PASSWORD = "password123"
 
-TOTAL_ORDERS = 5000
+TOTAL_ORDERS = 10000
 WORKERS = 10
 
 # Product IDs từ database của bạn
 PRODUCT_IDS = [
-    "e11d4c3e-2d95-44fb-94d8-8bfdaa4abf46",
-    "d19542a1-39a0-4b11-b628-ff71198bca51",
-    "b777dd2c-efb5-43f3-be8a-8111283d06e5",
-    "361949f8-5a80-4ff4-bfc8-93bbbf72c40c",
-    "a04d0a3d-2cac-4900-b400-9826c22b270e",
-    "c9dbfc9f-9b74-479b-8e78-a3ca0e07a119",
-    "bd80ed7f-3334-46de-9bc2-1c23d934946e",
-    "95a6e344-dd57-4840-b39d-21fc5c493960",
-    "2c778261-f7f7-45f5-8a0c-d4702563dba2",
-    "6a6bb28f-9240-4cd0-93a2-62a8fe50f90a",
-    "667f3d85-fd64-4817-9841-4edd9ca15c21",
-    "5453afd3-af4b-43d8-bd11-03da38cecd96",
-    "d51a8ef3-7540-42f3-ac4b-417ee0975e01",
-    "1942ce57-7c77-4977-b48f-bac9f299dadd",
-    "72839bcc-67c7-4f30-8cca-45de272485ed",
-    "2170797a-099d-424b-8c83-d1b0b646bcb4",
-    "d513ff6d-f055-4e75-a2f1-2708b0b1c562",
-    "825519ec-80fd-4e9a-bad9-fbe8670def2c",
-    "9f819fbf-07d4-497f-93db-cda32fa4b73f",
-    "4cac6912-2e78-42e0-8220-4f982612845c",
+    "4932081c-d5e3-4c9e-9001-5038db4c52ab",
+    "03456c2b-061d-45c0-99f0-05cb5c23175c",
+    "0943cda7-9b43-43a0-a566-7f51078b1956",
+    "90a3a28d-2774-41e2-8cb3-8c4b774d550e",
+    "94ef3f90-23e7-41ac-aff9-a51f9a3ea713",
+    "ebff0b40-9425-4e94-bc03-e371c01c6dac",
+    "ea1c889d-9265-4821-861f-23dc3f0bf8c7",
+    "7b52d567-a22a-474c-b029-758aacc98d93",
+    "e58e833b-bf23-4526-9c09-90a47dc0833d",
+    "34934a7f-bbf0-4bec-8e42-04e075b6823f",
+    "b2ed70f0-8e4c-46b8-a149-497b1a3319ea",
+    "2c452a47-27f2-4714-83a8-1d18120e069c",
+    "a0698e62-e70c-462c-a6ec-c239521c1976",
+    "2ca6d9aa-6fab-48fd-be89-e3abe6f7a530",
+    "caef2af4-67d3-4dbb-b6e5-943486de542f",
+    "376a855b-3895-4f74-98ee-64f66c84180e",
+    "ab295984-10f4-4a43-94c0-8219820e95ab",
+    "109d208a-7a07-431c-a386-d3ef67ec89c5",
+    "01104e46-3b47-44a8-95d9-518660c01fad",
+    "03916973-a452-487c-868b-4df917639615",
 ]
 # ====================================================
 
