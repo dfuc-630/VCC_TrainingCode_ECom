@@ -7,7 +7,7 @@ from app.schemas import WalletDepositSchema, OrderCreateSchema
 from app.utils.validators import validate_schema, validate_pagination
 from app.utils.decorators import role_required
 from app.enums import UserRole
-
+from app.utils.kafka_utils import order_item_producer_send
 customer_bp = Blueprint("customer", __name__)
 
 
@@ -136,7 +136,7 @@ def create_order(current_user): #checked
             shipping_address=data["shipping_address"],
             shipping_phone=data["shipping_phone"],
         )
-
+        # order_item_producer_send(order) # send kafka order_item_events topic
         return (
             jsonify(
                 {

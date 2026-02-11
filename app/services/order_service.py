@@ -13,6 +13,8 @@ from app.enums import OrderStatus, PaymentStatus, OrderItemStatus
 from sqlalchemy import or_
 from flask import jsonify
 from app.utils.order_utils import _get_products_for_update, _validate_items, _create_order, _create_order_items
+from app.services.kafka_producer_order_service import get_kafka_producer
+
 class OrderService:
     @staticmethod
     def create_order(customer_id, items_data, shipping_address, shipping_phone) -> Order:
@@ -42,13 +44,14 @@ class OrderService:
             )
 
             _create_order_items(order, validated_items)
-
+            # logger.info(f"Published {len(order_items)} events to Kafka for order {order.id}")
             db.session.commit()
 
             return order
 
         except Exception:
             db.session.rollback()
+            print(f"Failed to create order: {e}", exc_info=True)
             raise
     
     @staticmethod
@@ -158,3 +161,69 @@ class OrderService:
         except Exception as e:
             db.session.rollback()
             raise e
+
+    @staticmethod
+    def retry_failed_order(order_id: str) -> bool:
+        """
+        Retry a failed order by republishing events for FAILED items
+        
+        Args:
+            order_id: Order ID to retry
+            
+        Returns:
+            True if events were published successfully
+        """
+        kafka_producer = get_kafka_producer()
+        
+        try:
+            order = db.session.query(Order).filter(Order.id == order_id).first()
+            if not order:
+                print(f"Order {order_id} not found")
+                return False
+            
+            # Get failed items
+            failed_items = (
+                db.session.query(OrderItem)
+                .filter(
+                    OrderItem.order_id == order_id,
+                    OrderItem.status == OrderItemStatus.FAILED
+                )
+                .all()
+            )
+            
+            if not failed_items:
+                print(f"No failed items found for order {order_id}")
+                return True
+            
+            # Reset order status
+            order.status = OrderStatus.PENDING
+            order.retry_count += 1
+            
+            # Reset failed items to PENDING
+            for item in failed_items:
+                item.status = OrderItemStatus.PENDING
+            
+            db.session.commit()
+            
+            # Republish events
+            for item in failed_items:
+                kafka_producer.publish_order_item_event(
+                    order_item_id=item.id,
+                    order_id=order.id,
+                    product_id=item.product_id,
+                    quantity=item.quantity,
+                    event_type="RETRY_ITEM"
+                )
+            
+            kafka_producer.flush()
+            
+            print(
+                f"Retried order {order_id} with {len(failed_items)} items "
+                f"(retry_count={order.retry_count})"
+            )
+            return True
+            
+        except Exception as e:
+            db.session.rollback()
+            print(f"Failed to retry order {order_id}: {e}", exc_info=True)
+            return False

@@ -4,7 +4,7 @@ from app.models.product import Product
 from app.enums import OrderItemStatus, OrderStatus, PaymentStatus
 from app.models.order import Order, OrderItem
 from app.utils.helpers import generate_order_number
-
+from app.utils.kafka_utils import send_order_item_event
 def _get_products_for_update(product_ids):
     products = (
         db.session.query(Product)
@@ -76,5 +76,5 @@ def _create_order_items(order, validated_items):
             subtotal=subtotal,
             status=OrderItemStatus.PENDING,
         )
-
+        send_order_item_event(order_item, order.id)
         db.session.add(order_item)
