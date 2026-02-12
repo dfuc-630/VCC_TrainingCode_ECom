@@ -18,6 +18,7 @@ def order_item_producer_send(order):
 
 
 def send_order_item_event(order_item, order_id):
+    print("order_item_id: ", order_item.id)
     success = kafka_producer.publish_order_item_event(
         order_item_id=order_item.id,
         order_id=order_id,
@@ -32,4 +33,4 @@ def send_order_item_event(order_item, order_id):
             "Item will not be processed unless manually retriggered."
         )
 
-    kafka_producer.flush()  # Ensure all events are sent(order_items)} events to Kafka for order {order.id}")
+    # kafka_producer.flush() 

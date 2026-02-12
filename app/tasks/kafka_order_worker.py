@@ -13,7 +13,7 @@ from app.models.wallet import Wallet
 from app.enums import OrderStatus, OrderItemStatus, PaymentStatus
 from app.extensions import db
 from app.services.wallet_service import WalletService
-
+from app import create_app
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -67,9 +67,7 @@ class OrderResultAggregator:
         self.expected_counts.pop(order_id, None)
 
 
-class OrderKafkaWorker:
-    """Kafka consumer worker for order finalization"""
-    
+class OrderKafkaWorker:    
     def __init__(self, worker_id: int = 1):
         self.worker_id = worker_id
         self.running = True
@@ -238,11 +236,6 @@ class OrderKafkaWorker:
             db.session.rollback()
             logger.error(f"Error finalizing order {order_id}: {e}", exc_info=True)
     
-    
-    """
-        Load expected item counts for in-flight orders on startup
-        This ensures aggregator knows how many items to expect
-        """
     def load_expected_counts(self):
         try:
             results = (
@@ -273,9 +266,9 @@ class OrderKafkaWorker:
     def process_message(self, message):
         try:
             data = message.value
-            order_item_id = data['order_item_id']
-            order_id = data['order_id']
-            status = data['status']  # RESERVED or FAILED
+            order_item_id = str(data['order_item_id'])
+            order_id = str(data['order_id'])
+            status = str(data['status'])  # RESERVED or FAILED
             
             logger.info(
                 f"[Worker-{self.worker_id}] Received result: "
@@ -305,37 +298,41 @@ class OrderKafkaWorker:
             return False
     
     def run(self):
-        logger.info(f"OrderWorker-{self.worker_id} started (PID={os.getpid()})")
-        
-        # Load expected counts on startup
-        self.load_expected_counts()
-        
-        # Setup signal handlers
-        signal.signal(signal.SIGINT, self._shutdown)
-        signal.signal(signal.SIGTERM, self._shutdown)
-        
-        try:
-            while self.running:
-                messages = self.consumer.poll(timeout_ms=1000)
-                
-                if not messages:
-                    continue
-                
-                for topic_partition, records in messages.items():
-                    for message in records:
-                        success = self.process_message(message)
-                        
-                        if success:
-                            self.consumer.commit()
-                        else:
-                            logger.warning(
-                                f"Skipping commit for failed message at offset {message.offset}"
-                            )
-                
-        except Exception as e:
-            logger.error(f"Consumer loop error: {e}", exc_info=True)
-        finally:
-            self.cleanup()
+        app = create_app()
+
+        with app.app_context():
+
+            logger.info(f"OrderWorker-{self.worker_id} started (PID={os.getpid()})")
+            
+            # Load expected counts on startup
+            self.load_expected_counts()
+            
+            # Setup signal handlers
+            signal.signal(signal.SIGINT, self._shutdown)
+            signal.signal(signal.SIGTERM, self._shutdown)
+            
+            try:
+                while self.running:
+                    messages = self.consumer.poll(timeout_ms=1000)
+                    
+                    if not messages:
+                        continue
+                    
+                    for topic_partition, records in messages.items():
+                        for message in records:
+                            success = self.process_message(message)
+                            
+                            if success:
+                                self.consumer.commit()
+                            else:
+                                logger.warning(
+                                    f"Skipping commit for failed message at offset {message.offset}"
+                                )
+                    
+            except Exception as e:
+                logger.error(f"Consumer loop error: {e}", exc_info=True)
+            finally:
+                self.cleanup()
     
     def _shutdown(self, signum, frame):
         logger.info(f"Received signal {signum}, shutting down worker-{self.worker_id}...")
@@ -348,9 +345,8 @@ class OrderKafkaWorker:
 
 
 def run_order_kafka_worker(worker_id: int = 1):
+    # app = create_app()
+
+    # with app.app_context():
     worker = OrderKafkaWorker(worker_id)
     worker.run()
-
-
-if __name__ == "__main__":
-    run_order_kafka_worker(worker_id=1)

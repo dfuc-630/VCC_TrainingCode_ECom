@@ -22,7 +22,7 @@ event = {
 future = producer.send(
     topic="order-item-events",
     key=str(event["order_item_id"]),
-    value=event
+    value=event 
 )
 
 result = future.get(timeout=10)

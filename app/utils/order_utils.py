@@ -64,6 +64,7 @@ def _create_order(customer_id, seller_id, total_amount, shipping_address, shippi
     return order
 
 def _create_order_items(order, validated_items):
+    created_items = []
     for product, qty, subtotal in validated_items:
         product.stock_quantity -= qty
 
@@ -76,5 +77,8 @@ def _create_order_items(order, validated_items):
             subtotal=subtotal,
             status=OrderItemStatus.PENDING,
         )
-        send_order_item_event(order_item, order.id)
+        # send_order_item_event(order_item, order.id)
         db.session.add(order_item)
+        created_items.append(order_item)
+
+    return created_items

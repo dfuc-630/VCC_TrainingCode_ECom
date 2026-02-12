@@ -14,6 +14,7 @@ from sqlalchemy import or_
 from flask import jsonify
 from app.utils.order_utils import _get_products_for_update, _validate_items, _create_order, _create_order_items
 from app.services.kafka_producer_order_service import get_kafka_producer
+from app.utils.kafka_utils import send_order_item_event
 
 class OrderService:
     @staticmethod
@@ -43,13 +44,14 @@ class OrderService:
                 shipping_phone
             )
 
-            _create_order_items(order, validated_items)
+            order_items = _create_order_items(order, validated_items)
             # logger.info(f"Published {len(order_items)} events to Kafka for order {order.id}")
             db.session.commit()
-
+            for item in order_items:
+                send_order_item_event(item, order.id)
             return order
 
-        except Exception:
+        except Exception as e:
             db.session.rollback()
             print(f"Failed to create order: {e}", exc_info=True)
             raise

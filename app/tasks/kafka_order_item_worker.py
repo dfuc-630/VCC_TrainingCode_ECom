@@ -8,13 +8,13 @@ import sys
 from datetime import datetime, timedelta
 from typing import Optional
 from decimal import Decimal
-
+from app import create_app
 from app.models.order import OrderItem
 from app.models.product import Product
 from app.enums import OrderItemStatus
 from app.extensions import db
-from services.kafka_producer_order_service import get_kafka_producer
-from dlq_handler import DLQManager
+from app.services.kafka_producer_order_service import get_kafka_producer
+from app.utils.dlq_handler import DLQManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,27 +60,34 @@ class OrderItemKafkaWorker:
         logger.info(f"OrderItemWorker-{worker_id} initialized")
     
     def try_reserve_stock(self, order_item_id: str, product_id: str, quantity: int) -> tuple[bool, Optional[str]]:
+        try:
+            target_qty = int(quantity)
+        except:
+            return False, f"Quantity {quantity} is not a valid integer"
+
         for attempt in range(RETRY_LIMIT):
             try:
-                product = (db.session.query(Product).filter(Product.id == product_id).first())
+                product = db.session.query(Product).filter(Product.id == product_id).first()
                 
                 if not product:
                     return False, f"Product {product_id} not found"
                 
-                if product.stock_quantity < quantity:
-                    return False, f"Insufficient stock: {product.stock_quantity} < {quantity}"
+                current_stock_val = int(product.stock_quantity)
+                current_version_val = int(product.version)
+
+                if current_stock_val < target_qty:
+                    return False, f"Insufficient stock: {current_stock_val} < {target_qty}"
                 
-                # Optimistic lock update
                 rows = (
                     db.session.query(Product)
                     .filter(
-                        Product.id == product.id,
-                        Product.version == product.version,
-                        Product.stock_quantity >= quantity
+                        Product.id == product_id,
+                        Product.version == current_version_val,
+                        Product.stock_quantity >= target_qty
                     )
                     .update(
                         {
-                            Product.stock_quantity: Product.stock_quantity - quantity,
+                            Product.stock_quantity: Product.stock_quantity - target_qty,
                             Product.version: Product.version + 1
                         },
                         synchronize_session=False
@@ -89,13 +96,8 @@ class OrderItemKafkaWorker:
                 
                 if rows == 1:
                     db.session.commit()
-                    logger.info(
-                        f"Reserved stock: order_item={order_item_id}, "
-                        f"product={product_id}, quantity={quantity}"
-                    )
                     return True, None
                 
-                # Version conflict, retry
                 db.session.rollback()
                 time.sleep(RETRY_DELAY * (attempt + 1))
                 
@@ -105,7 +107,7 @@ class OrderItemKafkaWorker:
                 if attempt == RETRY_LIMIT - 1:
                     return False, str(e)
                 time.sleep(RETRY_DELAY)
-        
+                
         return False, f"Failed after {RETRY_LIMIT} retries"
     
     def update_order_item_status(self, order_item_id: str, status: OrderItemStatus):
@@ -133,26 +135,25 @@ class OrderItemKafkaWorker:
     def process_message(self, message):
         message_id = (message.partition, message.offset)
         retry_count = self.message_retry_counts.get(message_id, 0)
-        
+
         try:
             data = message.value
-            order_item_id = data['order_item_id']
-            order_id = data['order_id']
-            product_id = data['product_id']
+            order_item_id = str(data['order_item_id'])
+            order_id = str(data['order_id'])
+            product_id = str(data['product_id'])
             quantity = data['quantity']
-            event_type = data.get('event_type', 'PROCESS_ITEM')
+            event_type = str(data.get('event_type', 'PROCESS_ITEM'))
             
             logger.info(
                 f"[Worker-{self.worker_id}] Processing: "
                 f"order_item={order_item_id}, event_type={event_type}, "
                 f"retry_count={retry_count}"
             )
-            
             # Update status to PROCESSING
             self.update_order_item_status(order_item_id, OrderItemStatus.PROCESSING)
             
             # Try to reserve stock
-            success, error_message = self.try_reserve_stock(order_item_id, product_id, quantity)
+            success, error_message = self.try_reserve_stock(order_item_id, product_id, int(quantity))
             
             # Update final status in DB
             final_status = OrderItemStatus.RESERVED if success else OrderItemStatus.FAILED
@@ -207,35 +208,38 @@ class OrderItemKafkaWorker:
                 return True
     
     def run(self):
-        logger.info(f"OrderItemWorker-{self.worker_id} started (PID={os.getpid()})")
-        
-        # Setup signal handlers
-        signal.signal(signal.SIGINT, self._shutdown)
-        signal.signal(signal.SIGTERM, self._shutdown)
-        
-        try:
-            while self.running:
-                messages = self.consumer.poll(timeout_ms=1000)
-                
-                if not messages:
-                    continue
-                
-                for topic_partition, records in messages.items():
-                    for message in records:
-                        success = self.process_message(message)
-                        
-                        if success:
-                            self.consumer.commit()
-                        else:
-                            logger.warning(
-                                f"Skipping commit for failed message at offset {message.offset}"
-                            )
-                            # Could implement DLQ here for persistent failures
-                
-        except Exception as e:
-            logger.error(f"Consumer loop error: {e}", exc_info=True)
-        finally:
-            self.cleanup()
+        app = create_app()
+
+        with app.app_context():
+            logger.info(f"OrderItemWorker-{self.worker_id} started (PID={os.getpid()})")
+            
+            # Setup signal handlers
+            signal.signal(signal.SIGINT, self._shutdown)
+            signal.signal(signal.SIGTERM, self._shutdown)
+    
+            try:
+                while self.running:
+                    messages = self.consumer.poll(timeout_ms=1000)
+                    
+                    if not messages:
+                        continue
+                    
+                    for topic_partition, records in messages.items():
+                        for message in records:
+                            success = self.process_message(message)
+                            
+                            if success:
+                                self.consumer.commit()
+                            else:
+                                logger.warning(
+                                    f"Skipping commit for failed message at offset {message.offset}"
+                                )
+                                # Could implement DLQ here for persistent failures
+                    
+            except Exception as e:
+                logger.error(f"Consumer loop error: {e}", exc_info=True)
+            finally:
+                self.cleanup()
     
     def _shutdown(self, signum, frame):
         logger.info(f"Received signal {signum}, shutting down worker-{self.worker_id}...")
@@ -251,7 +255,3 @@ class OrderItemKafkaWorker:
 def run_order_item_kafka_worker(worker_id: int = 1):
     worker = OrderItemKafkaWorker(worker_id)
     worker.run()
-
-
-if __name__ == "__main__":
-    run_order_item_kafka_worker(worker_id=1)
