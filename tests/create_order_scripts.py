@@ -15,7 +15,7 @@ API_BASE_URL = "http://127.0.0.1:5000/api/v1"
 USERNAME = "username5"
 PASSWORD = "password123"
 
-TOTAL_ORDERS = 10000
+TOTAL_ORDERS = 20
 WORKERS = 10
 
 # Product IDs từ database của bạn

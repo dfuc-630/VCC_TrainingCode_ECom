@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from app.extensions import db
 from app.models.order import Order
 from kafka import KafkaConsumer
@@ -46,13 +47,13 @@ def run_tele_kafka_worker(worker_id: int):
                     
                     order.sent_tele = True
                     db.session.commit()
-                    
+
                     send_tele_message(
                         order_id=data.get("order_id"),
                         status=data.get("status", True),
                         message=data.get("custom_message")
                     )
-                    
+                    time.sleep(1)
                         
                 logger.info(f"TeleWorker-{worker_id} processed Order: {data.get('order_id')}")
             except Exception as e:
