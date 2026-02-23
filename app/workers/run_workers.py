@@ -5,6 +5,7 @@ import time
 
 from app.tasks.kafka_order_item_worker import run_order_item_kafka_worker
 from app.tasks.kafka_order_worker import run_order_kafka_worker
+from app.tasks.kafka_tele_worker import run_tele_kafka_worker
 
 
 # =========================
@@ -12,6 +13,7 @@ from app.tasks.kafka_order_worker import run_order_kafka_worker
 # =========================
 ORDER_ITEM_WORKERS = 7
 ORDER_WORKERS = 7
+TELE_WORKERS = 2
 # =========================
 
 
@@ -67,6 +69,9 @@ def main():
             count=ORDER_WORKERS,
             target_func=run_order_kafka_worker
         )
+
+    if TELE_WORKERS > 0:
+        start_workers("TeleWorker", TELE_WORKERS, run_tele_kafka_worker)
 
     try:
         while True:

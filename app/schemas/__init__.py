@@ -1,4 +1,3 @@
-from .user_schema import UserSchema
 from marshmallow import Schema, fields, validate, validates, ValidationError
 from app.enums import UserRole, OrderStatus, PaymentStatus
 

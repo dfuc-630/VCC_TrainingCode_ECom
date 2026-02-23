@@ -125,6 +125,33 @@ class OrderKafkaProducer:
         self.producer.close()
         logger.info("Kafka Producer closed")
 
+    def publish_tele_notification(self, order_id: str, status: bool, custom_message: Optional[str] = None) -> bool:
+            """
+            Đẩy event thông báo Telegram vào Kafka để Worker xử lý độc lập
+            """
+            topic = "tele-noti-events"
+            
+            # Cấu trúc message để Worker có đủ data xử lý
+            message = {
+                "order_id": order_id,
+                "status": status,
+                "custom_message": custom_message,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+
+            try:
+                future = self.producer.send(
+                    topic,
+                    key=str(order_id),
+                    value=message
+                )
+                future.get(timeout=10)
+                logger.info(f"Published Tele event to Kafka: Order {order_id}")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to publish Tele event: {e}", exc_info=True)
+                return False
+
 
 # Singleton instance
 _producer_instance: Optional[OrderKafkaProducer] = None

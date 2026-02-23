@@ -15,13 +15,15 @@ from flask import jsonify
 from app.utils.order_utils import _get_products_for_update, _validate_items, _create_order, _create_order_items
 from app.services.kafka_producer_order_service import get_kafka_producer
 from app.utils.kafka_utils import send_order_item_event
+import logging
 
+logger = logging.getLogger(__name__)
 class OrderService:
     @staticmethod
     def create_order(customer_id, items_data, shipping_address, shipping_phone) -> Order:
         if not items_data:
             raise ValueError("Order must have at least one item")
-
+        # print("đã chạy đến order_service")
         product_ids = list({item["product_id"] for item in items_data})
 
         try:
@@ -29,13 +31,13 @@ class OrderService:
 
             if len(products_map) != len(product_ids):
                 raise ValueError("One or more products not found")
-
+            # print("đã lấy producst")
             wallet = WalletService.get_wallet_by_user_id(customer_id)
             if not wallet:
                 raise ValueError("Wallet not found")
-
+            
             validated_items, seller_id, total_amount = _validate_items(items_data, products_map)
-
+            print("đã validate xong")
             order = _create_order(
                 customer_id,
                 seller_id,
@@ -43,17 +45,19 @@ class OrderService:
                 shipping_address,
                 shipping_phone
             )
+            # print("đã tạo xong order")
 
             order_items = _create_order_items(order, validated_items)
             # logger.info(f"Published {len(order_items)} events to Kafka for order {order.id}")
             db.session.commit()
+            # print("lỗi 2")
             for item in order_items:
                 send_order_item_event(item, order.id)
             return order
 
         except Exception as e:
             db.session.rollback()
-            print(f"Failed to create order: {e}", exc_info=True)
+            logger.error("Unhandled exception", exc_info=True)
             raise
     
     @staticmethod

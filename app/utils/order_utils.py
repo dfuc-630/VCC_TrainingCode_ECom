@@ -60,7 +60,7 @@ def _create_order(customer_id, seller_id, total_amount, shipping_address, shippi
 
     db.session.add(order)
     db.session.flush()
-
+    # print("đã create order")
     return order
 
 def _create_order_items(order, validated_items):

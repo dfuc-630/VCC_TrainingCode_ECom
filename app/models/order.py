@@ -30,6 +30,7 @@ class Order(BaseModel):
     wallet_transactions = db.relationship("WalletTransaction", backref="order")
     retry_count = db.Column(db.Integer, nullable=False, default=0)
     last_error = db.Column(db.Text)
+    sent_tele = db.Column(db.Boolean, nullable=False, default=False)
     def calculate_total(self):
         total = sum(item.subtotal for item in self.items)
         self.total_amount = total

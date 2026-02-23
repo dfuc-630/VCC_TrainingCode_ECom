@@ -7,7 +7,7 @@ from app.utils.validators import validate_schema, validate_pagination
 from app.schemas import OrderCreateSchema, WalletDepositSchema
 from app.services.product_service import ProductService
 from app.services.order_service import OrderService
-
+# from app.utils.kafka_utils import send_tele_message_event
 order_bp = Blueprint("orders", __name__)
 @order_bp.route("/", methods=["POST"])
 @jwt_required()
@@ -23,6 +23,7 @@ def create_order(current_user): #checked
             shipping_address=data["shipping_address"],
             shipping_phone=data["shipping_phone"],
         )
+        print("lỗi 1")
         # order_item_producer_send(order) # send kafka order_item_events topic
         return (
             jsonify(

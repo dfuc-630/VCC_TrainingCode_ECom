@@ -33,4 +33,11 @@ def send_order_item_event(order_item, order_id):
             "Item will not be processed unless manually retriggered."
         )
 
-    # kafka_producer.flush() 
+def send_tele_message_event(order_id = None, status = None, custom_message = None):
+    if order_id is None or status is None:
+        return False
+    success = kafka_producer.publish_tele_notification(order_id, status, custom_message)
+    if not success:
+        print(
+            f"Failed to publish event to noti tele {order_id}. "
+        )
