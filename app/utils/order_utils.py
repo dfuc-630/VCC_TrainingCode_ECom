@@ -1,10 +1,12 @@
 from decimal import Decimal
+
 from app.extensions import db
 from app.models.product import Product
 from app.enums import OrderItemStatus, OrderStatus, PaymentStatus
 from app.models.order import Order, OrderItem
 from app.utils.helpers import generate_order_number
-from app.utils.kafka_utils import send_order_item_event
+
+
 def _get_products_for_update(product_ids):
     products = (
         db.session.query(Product)
@@ -13,7 +15,13 @@ def _get_products_for_update(product_ids):
     )
 
     return {p.id: p for p in products}
+
+
 def _validate_items(items_data, products_map):
+    """
+    Validate basic thông tin item dựa trên DB (trạng thái, seller, giá, stock >= 0).
+    Việc trừ stock thật sự sẽ được xử lý ở Redis (reserve) + DB finalize.
+    """
     total_amount = Decimal("0")
     seller_id = None
     validated_items = []
@@ -31,6 +39,7 @@ def _validate_items(items_data, products_map):
         if not product.is_active:
             raise ValueError(f"Product {product.name} is not available")
 
+        # Kiểm tra sơ bộ theo DB để reject các case hiển nhiên sai
         if not product.has_stock(qty):
             raise ValueError(f"Insufficient stock for {product.name}")
 
@@ -46,7 +55,11 @@ def _validate_items(items_data, products_map):
 
     return validated_items, seller_id, total_amount
 
+
 def _create_order(customer_id, seller_id, total_amount, shipping_address, shipping_phone):
+    """
+    Tạo Order ở trạng thái PENDING, chưa trừ tiền và chưa sync stock DB.
+    """
     order = Order(
         order_number=generate_order_number(),
         customer_id=customer_id,
@@ -60,14 +73,16 @@ def _create_order(customer_id, seller_id, total_amount, shipping_address, shippi
 
     db.session.add(order)
     db.session.flush()
-    # print("đã create order")
     return order
 
+
 def _create_order_items(order, validated_items):
+    """
+    Tạo OrderItem với status PENDING, KHÔNG trừ stock trực tiếp trên DB.
+    Stock được reserve ở Redis và finalize xuống DB trong OrderKafkaWorker.
+    """
     created_items = []
     for product, qty, subtotal in validated_items:
-        product.stock_quantity -= qty
-
         order_item = OrderItem(
             order_id=order.id,
             product_id=product.id,
@@ -77,7 +92,6 @@ def _create_order_items(order, validated_items):
             subtotal=subtotal,
             status=OrderItemStatus.PENDING,
         )
-        # send_order_item_event(order_item, order.id)
         db.session.add(order_item)
         created_items.append(order_item)
 

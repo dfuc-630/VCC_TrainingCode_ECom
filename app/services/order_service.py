@@ -13,6 +13,7 @@ from app.enums import OrderStatus, PaymentStatus, OrderItemStatus
 from sqlalchemy import or_
 from flask import jsonify
 from app.utils.order_utils import _get_products_for_update, _validate_items, _create_order, _create_order_items
+from app.utils.redis_stock import reserve_stock_for_order_items
 from app.services.kafka_producer_order_service import get_kafka_producer
 from app.utils.kafka_utils import send_order_item_event
 import logging
@@ -31,13 +32,18 @@ class OrderService:
 
             if len(products_map) != len(product_ids):
                 raise ValueError("One or more products not found")
-            # print("đã lấy producst")
+
             wallet = WalletService.get_wallet_by_user_id(customer_id)
             if not wallet:
                 raise ValueError("Wallet not found")
             
             validated_items, seller_id, total_amount = _validate_items(items_data, products_map)
-            print("đã validate xong")
+
+            # Reserve stock trên Redis (all-or-nothing) trước khi persist Order vào DB
+            reserved, message = reserve_stock_for_order_items(validated_items)
+            if not reserved:
+                raise ValueError(f"Cannot reserve stock: {message}")
+
             order = _create_order(
                 customer_id,
                 seller_id,
@@ -48,9 +54,9 @@ class OrderService:
             # print("đã tạo xong order")
 
             order_items = _create_order_items(order, validated_items)
-            # logger.info(f"Published {len(order_items)} events to Kafka for order {order.id}")
+
             db.session.commit()
-            # print("lỗi 2")
+
             for item in order_items:
                 send_order_item_event(item, order.id)
             return order

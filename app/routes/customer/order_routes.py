@@ -23,8 +23,6 @@ def create_order(current_user): #checked
             shipping_address=data["shipping_address"],
             shipping_phone=data["shipping_phone"],
         )
-        print("lỗi 1")
-        # order_item_producer_send(order) # send kafka order_item_events topic
         return (
             jsonify(
                 {

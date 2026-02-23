@@ -8,14 +8,16 @@ from typing import Dict, Set
 from collections import defaultdict
 from sqlalchemy import func
 from app.models.order import Order, OrderItem
-from app.models.product import Product
 from app.models.wallet import Wallet
 from app.enums import OrderStatus, OrderItemStatus, PaymentStatus
 from app.extensions import db
 from app.services.wallet_service import WalletService
 from app import create_app
-from app.utils.noti_utils import send_tele_message
 from app.utils.kafka_utils import send_tele_message_event
+from app.utils.redis_stock import (
+    rollback_redis_stock_for_order_items,
+    sync_redis_stock_to_db_for_order_items,
+)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -105,33 +107,19 @@ class OrderKafkaWorker:
         
         return {w.id: w for w in wallets}
     
-    def rollback_stock(self, order_id: str):
-        items = db.session.query(OrderItem).filter(
-            OrderItem.order_id == order_id,
-            OrderItem.status == OrderItemStatus.RESERVED
-        ).all()
-        
-        product_ids = sorted({i.product_id for i in items})
-        products = (
-            db.session.query(Product)
-            .filter(Product.id.in_(product_ids))
-            .with_for_update()
-            .all()
-        )
-        
-        product_map = {p.id: p for p in products}
-        
-        for item in items:
-            product_map[item.product_id].stock_quantity += item.quantity
-        
-        logger.info(f"Rolled back stock for order {order_id}, {len(items)} items")
-    
     def process_success(self, order: Order):
         if order.status in [OrderStatus.COMPLETED, OrderStatus.FAILED, OrderStatus.CANCELLED]:
             logger.warning(f"Order {order.id} already in final status {order.status.value}")
             return
         
         try:
+            # Đồng bộ stock từ Redis về DB cho toàn bộ items của order
+            items = db.session.query(OrderItem).filter(
+                OrderItem.order_id == order.id
+            ).all()
+
+            sync_redis_stock_to_db_for_order_items(items)
+
             wallets = self.lock_wallets(order)
             
             WalletService.deduct_atomic(
@@ -176,7 +164,11 @@ class OrderKafkaWorker:
             return
         
         try:
-            self.rollback_stock(order.id)
+            # Rollback stock trên Redis cho các item đã reserve
+            items = db.session.query(OrderItem).filter(
+                OrderItem.order_id == order.id
+            ).all()
+            rollback_redis_stock_for_order_items(items)
             
             updated_count = db.session.query(OrderItem).filter(
                 OrderItem.order_id == order.id,

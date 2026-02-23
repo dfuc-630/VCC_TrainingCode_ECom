@@ -6,11 +6,10 @@ import os
 import signal
 import sys
 from datetime import datetime, timedelta
-from typing import Optional
-from decimal import Decimal
+from typing import Optional, Tuple
+
 from app import create_app
 from app.models.order import OrderItem
-from app.models.product import Product
 from app.enums import OrderItemStatus
 from app.extensions import db
 from app.services.kafka_producer_order_service import get_kafka_producer
@@ -59,56 +58,25 @@ class OrderItemKafkaWorker:
         
         logger.info(f"OrderItemWorker-{worker_id} initialized")
     
-    def try_reserve_stock(self, order_item_id: str, product_id: str, quantity: int) -> tuple[bool, Optional[str]]:
+    def validate_business_rules(
+        self,
+        order_item_id: str,
+        order_id: str,
+        product_id: str,
+        quantity: int,
+        event_type: str,
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Nơi để implement các rule business phức tạp (fraud detection, policy check, v.v.)
+        Hiện tại mặc định luôn hợp lệ để phù hợp Ver3 (Redis đã reserve stock ở edge).
+        """
         try:
-            target_qty = int(quantity)
-        except:
+            _ = int(quantity)
+        except Exception:
             return False, f"Quantity {quantity} is not a valid integer"
 
-        for attempt in range(RETRY_LIMIT):
-            try:
-                product = db.session.query(Product).filter(Product.id == product_id).first()
-                
-                if not product:
-                    return False, f"Product {product_id} not found"
-                
-                current_stock_val = int(product.stock_quantity)
-                current_version_val = int(product.version)
-
-                if current_stock_val < target_qty:
-                    return False, f"Insufficient stock: {current_stock_val} < {target_qty}"
-                
-                rows = (
-                    db.session.query(Product)
-                    .filter(
-                        Product.id == product_id,
-                        Product.version == current_version_val,
-                        Product.stock_quantity >= target_qty
-                    )
-                    .update(
-                        {
-                            Product.stock_quantity: Product.stock_quantity - target_qty,
-                            Product.version: Product.version + 1
-                        },
-                        synchronize_session=False
-                    )
-                )
-                
-                if rows == 1:
-                    db.session.commit()
-                    return True, None
-                
-                db.session.rollback()
-                time.sleep(RETRY_DELAY * (attempt + 1))
-                
-            except Exception as e:
-                db.session.rollback()
-                logger.error(f"Stock reservation error (attempt {attempt+1}): {e}")
-                if attempt == RETRY_LIMIT - 1:
-                    return False, str(e)
-                time.sleep(RETRY_DELAY)
-                
-        return False, f"Failed after {RETRY_LIMIT} retries"
+        # TODO: bổ sung thêm các rule khác nếu cần
+        return True, None
     
     def update_order_item_status(self, order_item_id: str, status: OrderItemStatus):
         try:
@@ -152,8 +120,14 @@ class OrderItemKafkaWorker:
             # Update status to PROCESSING
             self.update_order_item_status(order_item_id, OrderItemStatus.PROCESSING)
             
-            # Try to reserve stock
-            success, error_message = self.try_reserve_stock(order_item_id, product_id, int(quantity))
+            # Business validation (không đụng đến stock DB/Redis trong worker)
+            success, error_message = self.validate_business_rules(
+                order_item_id=order_item_id,
+                order_id=order_id,
+                product_id=product_id,
+                quantity=int(quantity),
+                event_type=event_type,
+            )
             
             # Update final status in DB
             final_status = OrderItemStatus.RESERVED if success else OrderItemStatus.FAILED
