@@ -58,14 +58,7 @@ class OrderItemKafkaWorker:
         
         logger.info(f"OrderItemWorker-{worker_id} initialized")
     
-    def validate_business_rules(
-        self,
-        order_item_id: str,
-        order_id: str,
-        product_id: str,
-        quantity: int,
-        event_type: str,
-    ) -> Tuple[bool, Optional[str]]:
+    def validate_business_rules(self, order_item_id: str, order_id: str, product_id: str, quantity: int, event_type: str,) -> Tuple[bool, Optional[str]]:
         """
         Nơi để implement các rule business phức tạp (fraud detection, policy check, v.v.)
         Hiện tại mặc định luôn hợp lệ để phù hợp Ver3 (Redis đã reserve stock ở edge).
@@ -75,7 +68,9 @@ class OrderItemKafkaWorker:
         except Exception:
             return False, f"Quantity {quantity} is not a valid integer"
 
-        # TODO: bổ sung thêm các rule khác nếu cần
+        if quantity <= 0:
+            return False, f"Quantity {quantity} must be greater than 0"
+        
         return True, None
     
     def update_order_item_status(self, order_item_id: str, status: OrderItemStatus):
