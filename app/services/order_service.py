@@ -25,7 +25,7 @@ class OrderService:
         if not items_data:
             raise ValueError("Order must have at least one item")
         # print("đã chạy đến order_service")
-        product_ids = list({item["product_id"] for item in items_data})
+        product_ids = sorted({item["product_id"] for item in items_data})
 
         try:
             products_map = _get_products_for_update(product_ids)

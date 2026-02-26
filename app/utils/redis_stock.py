@@ -142,7 +142,7 @@ def sync_redis_stock_to_db_for_order_items(order_items: Iterable[OrderItem]) -> 
     products = (
         db.session.query(Product)
         .filter(Product.id.in_(product_ids))
-        .with_for_update()
+        # .with_for_update()
         .all()
     )
     for product in products:
