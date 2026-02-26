@@ -13,7 +13,7 @@ from app.tasks.kafka_tele_worker import run_tele_kafka_worker
 # =========================
 ORDER_ITEM_WORKERS = 7
 ORDER_WORKERS = 7
-TELE_WORKERS = 2
+# TELE_WORKERS = 2
 # =========================
 
 

@@ -284,13 +284,13 @@ class OrderKafkaWorker:
             # Try to finalize order
             self.finalize_order(order_id)
             # send_tele_message(order_id = order_id, status = True)
-            send_tele_message_event(order_id = order_id, status = True)
+            # send_tele_message_event(order_id = order_id, status = True)
             return True
             
         except Exception as e:
             logger.error(f"Error processing result message: {e}", exc_info=True)
             message = f"Error processing result message: {e}"
-            send_tele_message_event(order_id = order_id, status = False, custom_message = message)
+            # send_tele_message_event(order_id = order_id, status = False, custom_message = message)
             db.session.rollback()
             return False
     
