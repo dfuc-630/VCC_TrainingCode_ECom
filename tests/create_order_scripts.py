@@ -15,7 +15,7 @@ API_BASE_URL = "http://127.0.0.1:5000/api/v1"
 USERNAME = "username5"
 PASSWORD = "password123"
 
-TOTAL_ORDERS = 50000
+TOTAL_ORDERS = 10000
 WORKERS = 10
 
 # Product IDs từ database của bạn
@@ -79,12 +79,12 @@ def get_access_token():
 
 def build_order_payload(index):
     """Tạo payload cho order với 1-10 products ngẫu nhiên"""
-    num_products = random.randint(1, 10)
+    num_products = random.randint(10000, 100000)
     
     items = []
     for _ in range(num_products):
         product_id = random.choice(PRODUCT_IDS)
-        quantity = random.randint(1, 3)
+        quantity = random.randint(100000, 300000)
         items.append({
             "product_id": product_id,
             "quantity": quantity,

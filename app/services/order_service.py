@@ -13,7 +13,7 @@ from app.enums import OrderStatus, PaymentStatus, OrderItemStatus
 from sqlalchemy import or_
 from flask import jsonify
 from app.utils.order_utils import _get_products_for_update, _validate_items, _create_order, _create_order_items
-from app.utils.redis_stock import reserve_stock_for_order_items
+from app.utils.redis_stock import reserve_stock_for_order_items, rollback_redis_stock_for_order_items
 from app.services.kafka_producer_order_service import get_kafka_producer
 from app.utils.kafka_utils import send_order_item_event
 import logging
@@ -63,6 +63,7 @@ class OrderService:
 
         except Exception as e:
             db.session.rollback()
+            # rollback_redis_stock_for_order_items(order_items)  # đảm bảo rollback stock trên Redis nếu có lỗi
             logger.error("Unhandled exception", exc_info=True)
             raise
     
