@@ -1,0 +1,82 @@
+"""
+Money value object - represents monetary amounts
+"""
+from decimal import Decimal
+from ddd.shared.domain.value_object import ValueObject
+from ddd.shared.domain.exceptions import InvalidValueObjectError
+
+
+class Money(ValueObject):
+    """
+    Money value object representing a monetary amount.
+    
+    This ensures type safety and prevents accidental currency mixing.
+    """
+    
+    def __init__(self, amount: Decimal | int | str, currency: str = "VND"):
+        """
+        Initialize Money value object.
+        
+        Args:
+            amount: Numeric amount (will be converted to Decimal)
+            currency: Currency code (default: VND)
+            
+        Raises:
+            InvalidValueObjectError: If amount is negative
+        """
+        if isinstance(amount, (int, str)):
+            amount = Decimal(str(amount))
+        
+        if amount < 0:
+            raise InvalidValueObjectError("Amount cannot be negative")
+        
+        # Round to 2 decimal places (standard for currency)
+        self._amount = amount.quantize(Decimal('0.01'))
+        self._currency = currency
+    
+    @property
+    def amount(self) -> Decimal:
+        return self._amount
+    
+    @property
+    def currency(self) -> str:
+        return self._currency
+    
+    def add(self, other: 'Money') -> 'Money':
+        """Add two Money objects"""
+        if self._currency != other._currency:
+            raise InvalidValueObjectError("Cannot add different currencies")
+        return Money(self._amount + other._amount, self._currency)
+    
+    def subtract(self, other: 'Money') -> 'Money':
+        """Subtract two Money objects"""
+        if self._currency != other._currency:
+            raise InvalidValueObjectError("Cannot subtract different currencies")
+        result = self._amount - other._amount
+        if result < 0:
+            raise InvalidValueObjectError("Subtraction would result in negative amount")
+        return Money(result, self._currency)
+    
+    def multiply(self, quantity: int) -> 'Money':
+        """Multiply Money by a quantity"""
+        if quantity < 0:
+            raise InvalidValueObjectError("Quantity cannot be negative")
+        return Money(self._amount * Decimal(quantity), self._currency)
+    
+    def is_zero(self) -> bool:
+        return self._amount == 0
+    
+    def is_greater_than(self, other: 'Money') -> bool:
+        """Check if this amount is greater than another"""
+        if self._currency != other._currency:
+            raise InvalidValueObjectError("Cannot compare different currencies")
+        return self._amount > other._amount
+    
+    def is_less_than(self, other: 'Money') -> bool:
+        """Check if this amount is less than another"""
+        if self._currency != other._currency:
+            raise InvalidValueObjectError("Cannot compare different currencies")
+        return self._amount < other._amount
+    
+    def __repr__(self) -> str:
+        return f"{self._currency} {self._amount}"

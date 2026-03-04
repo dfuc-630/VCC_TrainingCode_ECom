@@ -1,0 +1,68 @@
+from uuid import uuid4
+from datetime import datetime, timezone
+from ddd.shared.domain.base_entity import AggregateRoot
+from ddd.shared.domain.value_objects.money import Money
+
+
+class Product(AggregateRoot):
+    """Product aggregate root"""
+    
+    def __init__(
+        self,
+        product_id: str,
+        seller_id: str,
+        name: str,
+        description: str,
+        price: Money,
+        quantity: int,
+        is_active: bool = True,
+        created_at: datetime = None,
+        updated_at: datetime = None,
+    ):
+        super().__init__(id=product_id, created_at=created_at, updated_at=updated_at)
+        self.seller_id = seller_id
+        self.name = name
+        self.description = description
+        self.price = price
+        self.quantity = quantity
+        self.is_active = is_active
+    
+    @staticmethod
+    def create(
+        seller_id: str,
+        name: str,
+        description: str,
+        price: Money,
+        quantity: int,
+    ) -> 'Product':
+        """Create new product"""
+        product = Product(
+            product_id=str(uuid4()),
+            seller_id=seller_id,
+            name=name,
+            description=description,
+            price=price,
+            quantity=quantity,
+        )
+        return product
+    
+    def decrease_quantity(self, amount: int) -> bool:
+        """Decrease product quantity"""
+        if self.quantity < amount:
+            return False
+        self.quantity -= amount
+        return True
+    
+    def increase_quantity(self, amount: int):
+        """Increase product quantity"""
+        self.quantity += amount
+    
+    def deactivate(self):
+        """Deactivate product"""
+        self.is_active = False
+        self.updated_at = datetime.now(timezone.utc)
+    
+    def activate(self):
+        """Activate product"""
+        self.is_active = True
+        self.updated_at = datetime.now(timezone.utc)
