@@ -31,9 +31,9 @@ def create_user_routes(container):
     """
     user_bp = Blueprint('user_api', __name__, url_prefix='/users')
     
+
     @user_bp.route('/register', methods=['POST'])
     def register():
-        """Register new user"""
         try:
             data = request.get_json()
             
@@ -63,9 +63,9 @@ def create_user_routes(container):
         except Exception as e:
             return jsonify({'error': str(e)}), 500
     
+
     @user_bp.route('/<user_id>', methods=['GET'])
     def get_user(user_id):
-        """Get user profile"""
         try:
             query = GetUserByIdQuery(user_id=user_id)
             handler = container.get('get_user_by_id_handler')
@@ -79,9 +79,9 @@ def create_user_routes(container):
         except Exception as e:
             return jsonify({'error': str(e)}), 500
     
+    
     @user_bp.route('/email/<email>', methods=['GET'])
     def get_user_by_email(email):
-        """Get user by email"""
         try:
             query = GetUserByEmailQuery(email=email)
             handler = container.get('get_user_by_email_handler')
@@ -95,9 +95,9 @@ def create_user_routes(container):
         except Exception as e:
             return jsonify({'error': str(e)}), 500
     
+
     @user_bp.route('/<user_id>/change-password', methods=['POST'])
     def change_password(user_id):
-        """Change user password"""
         try:
             data = request.get_json()
             
@@ -122,9 +122,9 @@ def create_user_routes(container):
         except Exception as e:
             return jsonify({'error': str(e)}), 500
     
+
     @user_bp.route('/<user_id>/profile', methods=['PUT'])
     def update_profile(user_id):
-        """Update user profile"""
         try:
             data = request.get_json()
             
@@ -144,9 +144,9 @@ def create_user_routes(container):
         except Exception as e:
             return jsonify({'error': str(e)}), 500
     
+
     @user_bp.route('/<user_id>/deactivate', methods=['POST'])
     def deactivate_user(user_id):
-        """Deactivate user account"""
         try:
             command = DeactivateUserCommand(user_id=user_id)
             handler = container.get('deactivate_user_handler')

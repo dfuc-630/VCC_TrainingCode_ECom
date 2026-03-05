@@ -8,6 +8,8 @@ from app.extensions import db
 from integration.container import ServiceContainer
 from ddd.user_management.infrastructure.api.user_routes import create_user_routes
 from ddd.order_management.infrastructure.api.order_routes import create_order_routes
+from ddd.payment.infrastructure.api.wallet_routes import create_wallet_routes
+from ddd.product_catalog.infrastructure.api.product_routes import create_product_routes
 
 
 def create_ddd_app(config=None):
@@ -42,6 +44,8 @@ def create_ddd_app(config=None):
     # Register blueprints
     app.register_blueprint(create_user_routes(container), url_prefix='/api/v1')
     app.register_blueprint(create_order_routes(container), url_prefix='/api/v1')
+    app.register_blueprint(create_wallet_routes(container), url_prefix='/api/v1')
+    app.register_blueprint(create_product_routes(container), url_prefix='/api/v1')
     
     # Create tables
     with app.app_context():

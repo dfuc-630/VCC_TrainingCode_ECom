@@ -14,14 +14,8 @@ class OrderItem(Entity):
     OrderItems cannot exist independently - they always belong to an Order.
     """
     
-    def __init__(
-        self,
-        order_item_id: str,
-        product_id: str,
-        product_name: str,
-        price: Money,
-        quantity: int,
-    ):
+    def __init__(self, order_item_id: str, product_id: str, product_name: str, price: Money, quantity: int,):
+        
         super().__init__(order_item_id)
         self._product_id = product_id
         self._product_name = product_name

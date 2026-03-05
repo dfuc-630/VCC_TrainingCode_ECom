@@ -1,38 +1,29 @@
 """
 Create order use case
+Orchestrates async order processing with Kafka workers
 """
-from typing import List, Tuple
+from typing import List, Tuple, Optional
+from datetime import datetime, timezone
+import logging
+
 from ddd.shared.domain.value_objects import Money
 from ddd.order_management.domain.entities import Order
 from ddd.order_management.domain.repositories import OrderRepository
 from ddd.order_management.domain.exceptions import (
     InsufficientStockError,
     InsufficientBalanceError,
+    OrderNotFoundError,
 )
 from ddd.shared.infrastructure import EventDispatcher
 
+logger = logging.getLogger(__name__)
+
 
 class CreateOrderUseCase:
-    """
-    Create order use case.
-    
-    Orchestrates:
-    1. Load product information
-    2. Reserve inventory (Redis)
-    3. Create order aggregate
-    4. Validate customer balance
-    5. Persist order
-    6. Dispatch events
-    """
-    
-    def __init__(
-        self,
-        order_repository: OrderRepository,
-        product_repository,  # From product domain
-        wallet_repository,   # From payment domain
-        inventory_service,   # Inventory service
-        event_dispatcher: EventDispatcher,
-    ):
+
+    def __init__(self, order_repository: OrderRepository, product_repository,  
+        wallet_repository, inventory_service, event_dispatcher: EventDispatcher,):
+        
         self._order_repository = order_repository
         self._product_repository = product_repository
         self._wallet_repository = wallet_repository
@@ -40,53 +31,41 @@ class CreateOrderUseCase:
         self._event_dispatcher = event_dispatcher
     
     def execute(self, command) -> Order:
-        """
-        Execute create order command.
-        
-        Process:
-        1. Validate inputs
-        2. Load products and check prices
-        3. Reserve inventory (Redis Lua script for atomicity)
-        4. Create order aggregate
-        5. Save to repository
-        6. Dispatch events to Kafka
-        
-        On failure:
-        - Rollback Redis inventory reservation
-        - Raise domain exception
-        """
-        # Extract and prepare data
+
         customer_id = command.customer_id
         seller_id = command.seller_id
         
-        # 1. Load products
-        products_map = self._load_products(command.items)
-        
-        # 2. Prepare order items with prices
-        order_items_data = self._prepare_order_items(command.items, products_map)
-        
-        # 3. Try to reserve inventory (all-or-nothing)
-        reserved, message = self._inventory_service.reserve_items(order_items_data)
-        if not reserved:
-            raise InsufficientStockError(f"Cannot reserve stock: {message}")
+        logger.info(f"Creating order for customer={customer_id}, items={len(command.items)}")
         
         try:
-            # 4. Validate customer has enough balance
+            products_map = self._load_products(command.items)
+            order_items_data = self._prepare_order_items(command.items, products_map)
+            total_amount = self._calculate_total(order_items_data)
+            
+            logger.info(f"Validated {len(order_items_data)} items, total={total_amount}")
+            
+            success, message, reservation_id = self._inventory_service.reserve_items(order_items_data)
+            if not success:
+                logger.warning(f"Stock reservation failed: {message}")
+                raise InsufficientStockError(f"Stock reservation failed: {message}")
+            
+            logger.info(f"Stock reserved: reservation_id={reservation_id}")
+            
             customer_wallet = self._wallet_repository.find_by_user_id(customer_id)
             if not customer_wallet:
-                raise ValueError("Customer wallet not found")
-            
-            total_amount = sum(
-                Money(item['price']) * item['quantity']
-                for item in order_items_data
-            )
+                self._inventory_service.rollback_items(order_items_data)
+                logger.error(f"Customer wallet not found: {customer_id}")
+                raise ValueError(f"Wallet not found for customer {customer_id}")
             
             if customer_wallet.balance < total_amount:
-                # Rollback inventory
                 self._inventory_service.rollback_items(order_items_data)
-                raise InsufficientBalanceError("Customer has insufficient balance")
+                logger.warning(f"Insufficient balance: wallet={customer_wallet.balance}, required={total_amount}")
+                raise InsufficientBalanceError(
+                    f"Insufficient balance. Required: {total_amount}, Available: {customer_wallet.balance}"
+                )
             
-            # 5. Create order aggregate
+            logger.info(f"Wallet validated: {customer_wallet.balance} >= {total_amount}")
+            
             order = Order.create(
                 customer_id=customer_id,
                 seller_id=seller_id,
@@ -99,60 +78,142 @@ class CreateOrderUseCase:
                 order.add_item(
                     product_id=item_data['product_id'],
                     product_name=item_data['product_name'],
-                    price=Money(item_data['price']),
+                    price=Money(float(item_data['price'])),
                     quantity=item_data['quantity'],
                 )
             
-            # 6. Persist order
+            logger.info(f"Order aggregate created: order_id={order.id}, order_number={order.order_number}")
+            
             self._order_repository.save(order)
+            logger.info(f"Order persisted: {order.id}")
             
-            # 7. Dispatch events (async Kafka publishing)
-            for event in order.get_uncommitted_events():
+            events = order.get_uncommitted_events()
+            for event in events:
                 self._event_dispatcher.dispatch(event)
+                logger.info(f"Domain event published: {event.__class__.__name__}")
             
-            # 8. Publish order item events for worker processing
-            self._publish_order_item_events(order)
+            self._publish_order_item_events(order, order_items_data)
+            logger.info(f"Order-item events published: {len(order.items)} items")
             
             order.clear_uncommitted_events()
             
+            logger.info(f"✓ Order created successfully (async processing started): {order.id}")
             return order
         
         except Exception as e:
-            # Rollback inventory on any error
-            self._inventory_service.rollback_items(order_items_data)
+            # On ANY error: rollback stock reservation
+            logger.error(f"Error creating order: {e}")
+            try:
+                self._inventory_service.rollback_items(order_items_data)
+                logger.info(f"Stock rolled back due to error")
+            except Exception as rollback_error:
+                logger.error(f"Error during rollback: {rollback_error}")
+            
             raise
     
+    def _calculate_total(self, order_items_data: List[dict]) -> Money:
+        total = 0
+        for item in order_items_data:
+            total += float(item['price']) * item['quantity']
+        return Money(total)
+    
     def _load_products(self, items: List) -> dict:
-        """Load products from catalog domain"""
         product_ids = [item.product_id for item in items]
-        return self._product_repository.find_by_ids(product_ids)
+        if not product_ids:
+            raise ValueError("No items provided")
+        
+        # Try batch load if available
+        if hasattr(self._product_repository, 'find_by_ids'):
+            return self._product_repository.find_by_ids(product_ids)
+        
+        # Fallback: load individually
+        products = {}
+        for product_id in product_ids:
+            product = self._product_repository.find_by_id(product_id)
+            if not product:
+                raise ValueError(f"Product not found: {product_id}")
+            products[product_id] = product
+        
+        return products
     
     def _prepare_order_items(self, items: List, products_map: dict) -> List[dict]:
-        """Prepare order items with price information"""
         order_items = []
+        
         for item in items:
+            # Validate quantity
+            if item.quantity <= 0:
+                raise ValueError(f"Invalid quantity: {item.quantity}")
+            
+            # Load product details
             product = products_map.get(item.product_id)
             if not product:
-                raise ValueError(f"Product {item.product_id} not found")
+                raise ValueError(f"Product not found: {item.product_id}")
+            
+            # Get product price (prefer current_price if available)
+            price = getattr(product, 'current_price', getattr(product, 'price', 0))
             
             order_items.append({
-                'product_id': product.id,
+                'product_id': str(product.id),
                 'product_name': product.name,
-                'price': product.current_price,
+                'price': float(price),
                 'quantity': item.quantity,
             })
         
+        if not order_items:
+            raise ValueError("No valid items to order")
+        
         return order_items
     
-    def _publish_order_item_events(self, order: Order) -> None:
-        """Publish events for each order item to Kafka"""
-        for item in order.items:
-            event_data = {
+    def _publish_order_item_events(self, order: Order, order_items_data: List[dict]) -> None:
+        
+        if not self._kafka_producer:
+            logger.warning("No Kafka producer configured. Items will not be processed asynchronously.")
+            return
+        
+        try:
+            # Publish each order item for worker processing
+            for item in order.items:
+                event = {
+                    'order_id': order.id,
+                    'order_item_id': item.id,
+                    'product_id': item.product_id,
+                    'quantity': item.quantity,
+                    'event_type': 'PROCESS_ITEM',
+                    'created_at': datetime.now(timezone.utc).isoformat(),
+                }
+                
+                # Send to topic: order-item-events
+                # kafka_order_item_worker listens and processes
+                self._event_dispatcher.send_message(
+                    topic='order-item-events',
+                    message=event,
+                    key=str(item.product_id),
+                )
+                
+                logger.info(f"Order-item event published: order_item_id={item.id}, product_id={item.product_id}")
+            
+            # Also publish order-level event for kafka_order_worker
+            order_event = {
                 'order_id': order.id,
-                'order_item_id': item.id,
-                'product_id': item.product_id,
-                'quantity': item.quantity,
-                'event_type': 'PROCESS_ITEM',
+                'customer_id': order.customer_id,
+                'seller_id': order.seller_id,
+                'total_items': len(order.items),
+                'total_amount': float(order.total_amount) if order.total_amount else 0,
+                'event_type': 'ORDER_CREATED',
+                'created_at': datetime.now(timezone.utc).isoformat(),
             }
-            # Send to Kafka for worker processing
-            self._event_dispatcher.dispatch(event_data)
+            
+            # Send to topic: order-events
+            # kafka_order_worker listens and aggregates item results
+            self._event_dispatcher.send_message(
+                topic='order-events',
+                message=order_event,
+                key=str(order.id),
+            )
+            
+            logger.info(f"Order event published: order_id={order.id}")
+        
+        except Exception as e:
+            logger.error(f"Error publishing Kafka events: {e}")
+            # Don't raise - events are best-effort
+            # Order is already saved, async processing is nice-to-have

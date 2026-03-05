@@ -37,6 +37,7 @@ from ddd.order_management.application.use_cases.create_order_use_case import Cre
 from ddd.product_catalog.infrastructure.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
 from ddd.payment.infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from ddd.order_management.infrastructure.services.inventory_service import InventoryService
+from app.services.kafka_producer_order_service import OrderKafkaProducer
 
 
 class ServiceContainer:
@@ -65,7 +66,8 @@ class ServiceContainer:
         
         # ==== Event Dispatcher ====
         if self._use_kafka:
-            event_dispatcher = KafkaEventDispatcher()
+            kafka_producer = OrderKafkaProducer()
+            event_dispatcher = KafkaEventDispatcher(kafka_producer=kafka_producer)
         else:
             event_dispatcher = InMemoryEventDispatcher()
         self._services['event_dispatcher'] = event_dispatcher

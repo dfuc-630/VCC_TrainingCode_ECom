@@ -84,7 +84,7 @@ class CancelOrderCommandHandler:
         self.event_dispatcher = event_dispatcher
     
     def execute(self, command) -> OrderDTO:
-        """Execute order cancellation"""
+        
         order = self.order_repository.find_by_id(command.order_id)
         if not order:
             raise OrderNotFoundError(f"Order {command.order_id} not found")

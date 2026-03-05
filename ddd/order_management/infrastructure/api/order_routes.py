@@ -1,167 +1,263 @@
+"""
+Order Management API Routes
+Fully integrated with async Kafka workers and Redis stock management
+"""
 from flask import Blueprint, request, jsonify
-from ddd.order_management.domain.exceptions import OrderNotFoundError
+import logging
+from ddd.order_management.domain.exceptions import (
+    OrderNotFoundError,
+    InsufficientStockError,
+    InsufficientBalanceError,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def create_order_routes(container):
-    """
-    Create Flask blueprint for order routes
-    
-    Args:
-        container: DI container with all handlers
-        
-    Returns:
-        Blueprint with order endpoints
-    """
-    order_bp = Blueprint('order_api', __name__, url_prefix='/orders')
+    order_bp = Blueprint('order_api', __name__, url_prefix='/api/v1/orders')
     
     @order_bp.route('', methods=['POST'])
     def create_order():
-        """Create new order"""
         try:
             data = request.get_json()
+            if not data:
+                logger.warning("Empty request body")
+                return jsonify({'error': 'Request body is required'}), 400
             
             # Validate required fields
             required = ['customer_id', 'seller_id', 'items', 'shipping_address', 'shipping_phone']
-            if not all(field in data for field in required):
-                return jsonify({'error': f'Missing required fields: {", ".join(required)}'}), 400
+            missing = [f for f in required if f not in data]
+            if missing:
+                logger.warning(f"Missing fields: {missing}")
+                return jsonify({'error': 'Missing required fields', 'missing': missing}), 400
             
-            # Convert items
-            from ddd.order_management.application.commands.create_order_command import (
-                CreateOrderCommand,
-                CreateOrderItemCommand,
-            )
+            # Validate items
+            if not isinstance(data.get('items'), list) or len(data['items']) == 0:
+                logger.warning("Invalid items")
+                return jsonify({'error': 'Items must be non-empty list'}), 422
             
-            items = [
-                CreateOrderItemCommand(
-                    product_id=item['product_id'],
-                    quantity=item['quantity'],
-                )
-                for item in data['items']
-            ]
+            for idx, item in enumerate(data['items']):
+                if not item.get('product_id') or not isinstance(item.get('quantity'), int) or item['quantity'] <= 0:
+                    logger.warning(f"Invalid item {idx}")
+                    return jsonify({'error': f'Invalid item {idx}'}), 422
             
-            command = CreateOrderCommand(
-                customer_id=data['customer_id'],
-                seller_id=data['seller_id'],
-                items=items,
-                shipping_address=data['shipping_address'],
-                shipping_phone=data['shipping_phone'],
-            )
+            logger.info(f"Creating order: customer={data['customer_id']}, items={len(data['items'])}")
             
             # Execute via handler
             handler = container.get('create_order_handler')
-            result = handler.execute(command)
+            order_dto = handler.execute(data)
             
-            return jsonify(result.to_dict()), 201
+            logger.info(f"✓ Order created: {order_dto.id} (PENDING)")
+            
+            return jsonify({
+                'message': 'Order created successfully',
+                'order': order_dto.to_dict() if hasattr(order_dto, 'to_dict') else order_dto,
+                'note': 'Processing asynchronously...'
+            }), 201
+        
+        except InsufficientStockError as e:
+            logger.warning(f"Stock error: {e}")
+            return jsonify({'error': 'Insufficient stock', 'message': str(e)}), 409
+        
+        except InsufficientBalanceError as e:
+            logger.warning(f"Balance error: {e}")
+            return jsonify({'error': 'Insufficient balance', 'message': str(e)}), 402
+        
+        except ValueError as e:
+            logger.warning(f"Validation error: {e}")
+            return jsonify({'error': 'Validation error', 'message': str(e)}), 422
         
         except Exception as e:
-            return jsonify({'error': str(e)}), 500
+            logger.error(f"Error creating order: {e}", exc_info=True)
+            return jsonify({'error': 'Server error', 'message': str(e)}), 500
     
+    
+    # ======================== GET /api/v1/orders/<order_id> ========================
     @order_bp.route('/<order_id>', methods=['GET'])
     def get_order(order_id):
         """Get order details"""
         try:
-            from ddd.order_management.application.queries.get_order_query import GetOrderQuery
-            
-            query = GetOrderQuery(order_id=order_id)
+            logger.info(f"Fetching order: {order_id}")
             handler = container.get('get_order_handler')
-            order_dto = handler.execute(query)
+            order_dto = handler.execute({'order_id': order_id})
             
             if not order_dto:
                 return jsonify({'error': 'Order not found'}), 404
             
-            return jsonify(order_dto.to_dict()), 200
+            return jsonify(
+                order_dto.to_dict() if hasattr(order_dto, 'to_dict') else order_dto
+            ), 200
         
+        except OrderNotFoundError as e:
+            return jsonify({'error': str(e)}), 404
         except Exception as e:
+            logger.error(f"Error fetching order: {e}", exc_info=True)
             return jsonify({'error': str(e)}), 500
     
+    
+    # ======================== POST /api/v1/orders/<order_id>/confirm ========================
     @order_bp.route('/<order_id>/confirm', methods=['POST'])
     def confirm_order(order_id):
-        """Confirm order"""
+        """Manually confirm order (admin only)"""
         try:
-            from ddd.order_management.application.commands.create_order_command import ConfirmOrderCommand
-            
-            command = ConfirmOrderCommand(order_id=order_id)
+            logger.info(f"Confirming order: {order_id}")
             handler = container.get('confirm_order_handler')
-            result = handler.execute(command)
+            result = handler.execute({'order_id': order_id})
             
-            return jsonify(result.to_dict()), 200
+            return jsonify(result.to_dict() if hasattr(result, 'to_dict') else result), 200
         
-        except OrderNotFoundError as e:
-            return jsonify({'error': str(e)}), 404
+        except OrderNotFoundError:
+            return jsonify({'error': 'Order not found'}), 404
         except Exception as e:
+            logger.error(f"Error confirming order: {e}", exc_info=True)
             return jsonify({'error': str(e)}), 500
     
+    
+    # ======================== POST /api/v1/orders/<order_id>/ship ========================
     @order_bp.route('/<order_id>/ship', methods=['POST'])
     def ship_order(order_id):
-        """Ship order"""
+        """Update order status to SHIPPED"""
         try:
-            from ddd.order_management.application.commands.create_order_command import ShipOrderCommand
+            data = request.get_json() or {}
+            logger.info(f"Shipping order: {order_id}")
             
-            data = request.get_json()
-            seller_id = data.get('seller_id')
-            
-            command = ShipOrderCommand(order_id=order_id, seller_id=seller_id)
             handler = container.get('ship_order_handler')
-            result = handler.execute(command)
+            result = handler.execute({
+                'order_id': order_id,
+                'seller_id': data.get('seller_id'),
+                'tracking_number': data.get('tracking_number')
+            })
             
-            return jsonify(result.to_dict()), 200
+            return jsonify(result.to_dict() if hasattr(result, 'to_dict') else result), 200
         
-        except OrderNotFoundError as e:
-            return jsonify({'error': str(e)}), 404
+        except OrderNotFoundError:
+            return jsonify({'error': 'Order not found'}), 404
         except Exception as e:
+            logger.error(f"Error shipping order: {e}", exc_info=True)
             return jsonify({'error': str(e)}), 500
     
+    
+    # ======================== POST /api/v1/orders/<order_id>/complete ========================
     @order_bp.route('/<order_id>/complete', methods=['POST'])
     def complete_order(order_id):
-        """Complete order"""
+        """Update order status to COMPLETED"""
         try:
-            from ddd.order_management.application.commands.create_order_command import CompleteOrderCommand
-            
-            command = CompleteOrderCommand(order_id=order_id)
+            logger.info(f"Completing order: {order_id}")
             handler = container.get('complete_order_handler')
-            result = handler.execute(command)
+            result = handler.execute({'order_id': order_id})
             
-            return jsonify(result.to_dict()), 200
+            return jsonify(result.to_dict() if hasattr(result, 'to_dict') else result), 200
         
-        except OrderNotFoundError as e:
-            return jsonify({'error': str(e)}), 404
+        except OrderNotFoundError:
+            return jsonify({'error': 'Order not found'}), 404
         except Exception as e:
+            logger.error(f"Error completing order: {e}", exc_info=True)
             return jsonify({'error': str(e)}), 500
     
+    
+    # ======================== POST /api/v1/orders/<order_id>/cancel ========================
     @order_bp.route('/<order_id>/cancel', methods=['POST'])
     def cancel_order(order_id):
-        """Cancel order"""
+        """Cancel order (only PENDING orders can be cancelled)"""
         try:
-            from ddd.order_management.application.commands.create_order_command import CancelOrderCommand
+            data = request.get_json() or {}
+            logger.info(f"Cancelling order: {order_id}")
             
-            data = request.get_json()
-            customer_id = data.get('customer_id')
-            
-            command = CancelOrderCommand(order_id=order_id, customer_id=customer_id)
             handler = container.get('cancel_order_handler')
-            result = handler.execute(command)
+            result = handler.execute({
+                'order_id': order_id,
+                'customer_id': data.get('customer_id'),
+                'reason': data.get('reason')
+            })
             
-            return jsonify(result.to_dict()), 200
+            return jsonify(result.to_dict() if hasattr(result, 'to_dict') else result), 200
         
-        except OrderNotFoundError as e:
-            return jsonify({'error': str(e)}), 404
+        except OrderNotFoundError:
+            return jsonify({'error': 'Order not found'}), 404
         except Exception as e:
+            logger.error(f"Error cancelling order: {e}", exc_info=True)
             return jsonify({'error': str(e)}), 500
     
+    
+    # ======================== GET /api/v1/orders/customer/<customer_id> ========================
     @order_bp.route('/customer/<customer_id>', methods=['GET'])
     def get_customer_orders(customer_id):
-        """Get all orders for customer"""
+        """Get all orders for a customer"""
         try:
-            from ddd.order_management.application.queries.get_order_query import GetCustomerOrdersQuery
-            
             status = request.args.get('status')
-            query = GetCustomerOrdersQuery(customer_id=customer_id, status=status)
-            handler = container.get('get_customer_orders_handler')
-            orders_dto = handler.execute(query)
+            limit = int(request.args.get('limit', 20))
+            offset = int(request.args.get('offset', 0))
             
-            return jsonify([order.to_dict() for order in orders_dto]), 200
+            logger.info(f"Fetching orders for customer: {customer_id}")
+            
+            handler = container.get('get_customer_orders_handler')
+            orders_dto = handler.execute({
+                'customer_id': customer_id,
+                'status': status,
+                'limit': limit,
+                'offset': offset
+            })
+            
+            return jsonify([
+                order.to_dict() if hasattr(order, 'to_dict') else order
+                for order in orders_dto
+            ]), 200
         
         except Exception as e:
+            logger.error(f"Error fetching customer orders: {e}", exc_info=True)
             return jsonify({'error': str(e)}), 500
+    
+    
+    # ======================== GET /api/v1/orders/seller/<seller_id> ========================
+    @order_bp.route('/seller/<seller_id>', methods=['GET'])
+    def get_seller_orders(seller_id):
+        """Get all orders for a seller"""
+        try:
+            status = request.args.get('status')
+            limit = int(request.args.get('limit', 20))
+            offset = int(request.args.get('offset', 0))
+            
+            logger.info(f"Fetching orders for seller: {seller_id}")
+            
+            handler = container.get('get_seller_orders_handler')
+            orders_dto = handler.execute({
+                'seller_id': seller_id,
+                'status': status,
+                'limit': limit,
+                'offset': offset
+            })
+            
+            return jsonify([
+                order.to_dict() if hasattr(order, 'to_dict') else order
+                for order in orders_dto
+            ]), 200
+        
+        except Exception as e:
+            logger.error(f"Error fetching seller orders: {e}", exc_info=True)
+            return jsonify({'error': str(e)}), 500
+    
+    
+    # ======================== GET /api/v1/orders/pending ========================
+    @order_bp.route('/pending', methods=['GET'])
+    def get_pending_orders():
+        """Get all pending orders (admin dashboard)"""
+        try:
+            limit = int(request.args.get('limit', 50))
+            offset = int(request.args.get('offset', 0))
+            
+            logger.info(f"Fetching pending orders")
+            
+            handler = container.get('list_pending_orders_handler')
+            orders_dto = handler.execute({'limit': limit, 'offset': offset})
+            
+            return jsonify([
+                order.to_dict() if hasattr(order, 'to_dict') else order
+                for order in orders_dto
+            ]), 200
+        
+        except Exception as e:
+            logger.error(f"Error fetching pending orders: {e}", exc_info=True)
+            return jsonify({'error': str(e)}), 500
+    
     
     return order_bp

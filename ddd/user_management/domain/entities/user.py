@@ -18,35 +18,11 @@ from ddd.user_management.domain.exceptions import (
     CannotLoginError,
 )
 
-
 class User(AggregateRoot):
-    """
-    Rich User aggregate root.
     
-    The User entity encapsulates all user-related business logic and maintains consistency.
-    It's the only way to interact with user domain logic.
-    """
-    
-    def __init__(
-        self,
-        user_id: str,
-        email: Email,
-        password: Password,
-        role: Role,
-        full_name: Optional[str] = None,
-        phone: Optional[PhoneNumber] = None,
-    ):
-        """
-        Initialize User aggregate.
-        
-        Args:
-            user_id: Unique user identifier
-            email: User email (value object)
-            password: User password (hashed, value object)
-            role: User role (customer/seller/admin)
-            full_name: Optional full name
-            phone: Optional phone number (value object)
-        """
+    def __init__(self, user_id: str, email: Email, password: Password, role: Role, 
+                full_name: Optional[str] = None, phone: Optional[PhoneNumber] = None,):
+
         super().__init__(user_id)
         self._email = email
         self._password = password
@@ -57,18 +33,9 @@ class User(AggregateRoot):
         self._deleted_at: Optional[datetime] = None
     
     @staticmethod
-    def create(
-        email: Email,
-        password_plain: str,
-        role: Role,
-        full_name: Optional[str] = None,
-        phone: Optional[PhoneNumber] = None,
-    ) -> 'User':
-        """
-        Factory method to create a new user.
-        
-        This method handles password hashing and raises appropriate domain events.
-        """
+    def create(email: Email, password_plain: str, role: Role, full_name: Optional[str] = None,
+               phone: Optional[PhoneNumber] = None,) -> 'User':
+    
         user_id = str(uuid4())
         password_hash = Password.from_plain_text(password_plain)
         
@@ -142,11 +109,7 @@ class User(AggregateRoot):
         self._password = Password.from_plain_text(new_password_plain)
         self.raise_domain_event(UserPasswordChangedEvent(self.id))
     
-    def update_profile(
-        self,
-        full_name: Optional[str] = None,
-        phone: Optional[PhoneNumber] = None,
-    ) -> None:
+    def update_profile(self, full_name: Optional[str] = None, phone: Optional[PhoneNumber] = None,) -> None:
         """Update user profile information"""
         if full_name is not None:
             self._full_name = full_name

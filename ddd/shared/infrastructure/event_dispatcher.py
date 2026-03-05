@@ -2,7 +2,7 @@
 Event dispatcher for domain events
 """
 from abc import ABC, abstractmethod
-from typing import Callable, Dict, List, Type
+from typing import Callable, Dict, List, Type, Optional
 import logging
 
 from ddd.shared.domain.base_entity import DomainEvent
@@ -42,9 +42,27 @@ class EventDispatcher(ABC):
     def dispatch(self, event: DomainEvent) -> None:
         """
         Dispatch a domain event to all subscribed handlers.
-        
+
         Args:
             event: The domain event to dispatch
+        """
+        pass
+    
+    @abstractmethod
+    def send_message(self, topic: str, message: Dict, key: Optional[str] = None) -> bool:
+        """
+        Send a generic message to a Kafka topic.
+        
+        Used for internal worker communication (order-item-events, order-events, etc).
+        Not for domain events.
+        
+        Args:
+            topic: Kafka topic name
+            message: Message dict to publish
+            key: Optional partition key (for determining which partition messages go to)
+            
+        Returns:
+            True if successful, False otherwise
         """
         pass
 
@@ -76,6 +94,11 @@ class InMemoryEventDispatcher(EventDispatcher):
                 handler(event)
             except Exception as e:
                 logger.error(f"Error handling event {event_type.__name__}: {e}", exc_info=True)
+    
+    def send_message(self, topic: str, message: Dict, key: Optional[str] = None) -> bool:
+        """Log message (no-op for in-memory)"""
+        logger.info(f"[InMemory] Would send message to topic '{topic}' (key={key}): {message}")
+        return True
 
 
 class KafkaEventDispatcher(EventDispatcher):
@@ -114,7 +137,7 @@ class KafkaEventDispatcher(EventDispatcher):
                 logger.info(f"Event {event_type} published to Kafka topic {topic}")
             except Exception as e:
                 logger.error(f"Error publishing event to Kafka: {e}", exc_info=True)
-        
+
         # Also call local handlers (sync)
         event_type = type(event)
         handlers = self._subscribers.get(event_type, [])
@@ -123,6 +146,21 @@ class KafkaEventDispatcher(EventDispatcher):
                 handler(event)
             except Exception as e:
                 logger.error(f"Error in event handler: {e}", exc_info=True)
+    
+    def send_message(self, topic: str, message: Dict, key: Optional[str] = None) -> bool:
+        """Send a generic message to Kafka"""
+        if not self._kafka_producer:
+            logger.warning(f"Kafka producer not available to send message to topic: {topic}")
+            return False
+        
+        try:
+            future = self._kafka_producer.send(topic, value=message, key=key)
+            future.get(timeout=10)
+            logger.info(f"Message sent to Kafka topic: {topic} (key={key})")
+            return True
+        except Exception as e:
+            logger.error(f"Error sending message to topic {topic}: {e}", exc_info=True)
+            return False
     
     @staticmethod
     def _get_topic_from_event(event_type_name: str) -> str:

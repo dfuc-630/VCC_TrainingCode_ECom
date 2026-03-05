@@ -29,15 +29,9 @@ class Order(AggregateRoot):
     Order is the only entry point to manage order items.
     """
     
-    def __init__(
-        self,
-        order_id: str,
-        order_number: str,
-        customer_id: str,
-        seller_id: str,
-        shipping_address: str,
-        shipping_phone: str,
-    ):
+    def __init__(self, order_id: str, order_number: str, customer_id: str, seller_id: str,
+        shipping_address: str, shipping_phone: str,):
+
         super().__init__(order_id)
         self._order_number = order_number
         self._customer_id = customer_id
@@ -54,12 +48,7 @@ class Order(AggregateRoot):
         self._sent_tele = False
     
     @staticmethod
-    def create(
-        customer_id: str,
-        seller_id: str,
-        shipping_address: str,
-        shipping_phone: str,
-    ) -> 'Order':
+    def create(customer_id: str, seller_id: str, shipping_address: str, shipping_phone: str,) -> 'Order':
         """Factory method to create new order"""
         order_id = str(uuid4())
         order_number = OrderNumber.generate().value
