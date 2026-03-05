@@ -47,7 +47,7 @@ def create_order_routes(container):
             handler = container.get('create_order_handler')
             order_dto = handler.execute(data)
             
-            logger.info(f"✓ Order created: {order_dto.id} (PENDING)")
+            logger.info(f" Order created: {order_dto.id} (PENDING)")
             
             return jsonify({
                 'message': 'Order created successfully',
@@ -72,7 +72,6 @@ def create_order_routes(container):
             return jsonify({'error': 'Server error', 'message': str(e)}), 500
     
     
-    # ======================== GET /api/v1/orders/<order_id> ========================
     @order_bp.route('/<order_id>', methods=['GET'])
     def get_order(order_id):
         """Get order details"""
@@ -95,7 +94,6 @@ def create_order_routes(container):
             return jsonify({'error': str(e)}), 500
     
     
-    # ======================== POST /api/v1/orders/<order_id>/confirm ========================
     @order_bp.route('/<order_id>/confirm', methods=['POST'])
     def confirm_order(order_id):
         """Manually confirm order (admin only)"""
@@ -113,7 +111,6 @@ def create_order_routes(container):
             return jsonify({'error': str(e)}), 500
     
     
-    # ======================== POST /api/v1/orders/<order_id>/ship ========================
     @order_bp.route('/<order_id>/ship', methods=['POST'])
     def ship_order(order_id):
         """Update order status to SHIPPED"""
@@ -137,7 +134,6 @@ def create_order_routes(container):
             return jsonify({'error': str(e)}), 500
     
     
-    # ======================== POST /api/v1/orders/<order_id>/complete ========================
     @order_bp.route('/<order_id>/complete', methods=['POST'])
     def complete_order(order_id):
         """Update order status to COMPLETED"""
@@ -155,7 +151,6 @@ def create_order_routes(container):
             return jsonify({'error': str(e)}), 500
     
     
-    # ======================== POST /api/v1/orders/<order_id>/cancel ========================
     @order_bp.route('/<order_id>/cancel', methods=['POST'])
     def cancel_order(order_id):
         """Cancel order (only PENDING orders can be cancelled)"""
@@ -179,7 +174,6 @@ def create_order_routes(container):
             return jsonify({'error': str(e)}), 500
     
     
-    # ======================== GET /api/v1/orders/customer/<customer_id> ========================
     @order_bp.route('/customer/<customer_id>', methods=['GET'])
     def get_customer_orders(customer_id):
         """Get all orders for a customer"""
@@ -208,7 +202,6 @@ def create_order_routes(container):
             return jsonify({'error': str(e)}), 500
     
     
-    # ======================== GET /api/v1/orders/seller/<seller_id> ========================
     @order_bp.route('/seller/<seller_id>', methods=['GET'])
     def get_seller_orders(seller_id):
         """Get all orders for a seller"""
@@ -237,7 +230,6 @@ def create_order_routes(container):
             return jsonify({'error': str(e)}), 500
     
     
-    # ======================== GET /api/v1/orders/pending ========================
     @order_bp.route('/pending', methods=['GET'])
     def get_pending_orders():
         """Get all pending orders (admin dashboard)"""

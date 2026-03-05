@@ -97,7 +97,7 @@ class CreateOrderUseCase:
             
             order.clear_uncommitted_events()
             
-            logger.info(f"✓ Order created successfully (async processing started): {order.id}")
+            logger.info(f" Order created successfully (async processing started): {order.id}")
             return order
         
         except Exception as e:

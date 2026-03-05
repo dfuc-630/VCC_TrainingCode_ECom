@@ -20,15 +20,6 @@ from ddd.user_management.domain.exceptions import (
 
 
 def create_user_routes(container):
-    """
-    Create Flask blueprint for user routes
-    
-    Args:
-        container: DI container with all handlers
-        
-    Returns:
-        Blueprint with user endpoints
-    """
     user_bp = Blueprint('user_api', __name__, url_prefix='/users')
     
 

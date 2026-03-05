@@ -15,21 +15,9 @@ class SqlAlchemyOrderRepository(OrderRepository):
     """SQLAlchemy implementation of OrderRepository"""
     
     def __init__(self, session):
-        """
-        Args:
-            session: SQLAlchemy database session
-        """
         self._session = session
     
     def save(self, order: Order) -> None:
-        """
-        Save order aggregate to database
-        
-        Converts domain Order aggregate and its items to ORM models
-        
-        Args:
-            order: Order domain aggregate root
-        """
         # Find existing model or create new one
         model = self._session.query(OrderModel).filter_by(id=order.id).first()
         
@@ -62,15 +50,6 @@ class SqlAlchemyOrderRepository(OrderRepository):
             raise
     
     def find_by_id(self, entity_id: str) -> Optional[Order]:
-        """
-        Find order by ID with all items
-        
-        Args:
-            entity_id: Order ID
-            
-        Returns:
-            Order domain aggregate if found, None otherwise
-        """
         model = self._session.query(OrderModel).filter_by(id=entity_id).first()
         return self._to_domain(model) if model else None
     
@@ -119,17 +98,6 @@ class SqlAlchemyOrderRepository(OrderRepository):
     
     @staticmethod
     def _to_domain(model: OrderModel) -> Optional[Order]:
-        """
-        Convert SQLAlchemy ORM model to domain Order aggregate
-        
-        Reconstructs order with all items and value objects
-        
-        Args:
-            model: OrderModel ORM instance
-            
-        Returns:
-            Order domain aggregate with items
-        """
         if model is None:
             return None
         

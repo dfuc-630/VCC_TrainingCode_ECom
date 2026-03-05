@@ -8,6 +8,8 @@ from ddd.product_catalog.domain.exceptions import (
     ProductNotFoundError,
     InvalidProductError,
 )
+from ddd.product_catalog.domain.entities.product import Product
+from ddd.shared.domain.value_objects import Money
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +17,8 @@ logger = logging.getLogger(__name__)
 def create_product_routes(container):
     product_bp = Blueprint('product_api', __name__, url_prefix='/api/v1/products')
     
-    # ======================== POST /api/v1/products ========================
     @product_bp.route('', methods=['POST'])
     def create_product():
-        """Create new product"""
         try:
             data = request.get_json()
             if not data:
@@ -38,8 +38,6 @@ def create_product_routes(container):
             
             logger.info(f"Creating product: {data['name']} (seller: {data['seller_id']})")
             
-            from ddd.product_catalog.domain.entities.product import Product
-            from ddd.shared.domain.value_objects import Money
             
             product = Product.create(
                 seller_id=data['seller_id'],
