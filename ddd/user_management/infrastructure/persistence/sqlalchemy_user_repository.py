@@ -1,5 +1,8 @@
 from typing import Optional, List
 from sqlalchemy.exc import IntegrityError
+import logging
+
+logger = logging.getLogger(__name__)
 
 from ddd.user_management.infrastructure.persistence.sqlalchemy_user_model import UserModel
 from ddd.user_management.domain.repositories.user_repository_interface import UserRepository
@@ -149,14 +152,22 @@ class SqlAlchemyUserRepository(UserRepository):
                 full_name=model.full_name,
                 phone=phone,
                 role=role,
-                is_active=model.is_active,
-                deleted_at=model.deleted_at,
-                created_at=model.created_at,
-                updated_at=model.updated_at,
             )
+            
+            # Set persistence-specific attributes
+            user._is_active = model.is_active
+            user._deleted_at = model.deleted_at
+            user._created_at = model.created_at
+            user._updated_at = model.updated_at
             
             return user
         except Exception as e:
-            # If reconstruction fails, return None
-            # In production, might want to log this
+            # Log the error for debugging
+            logger.error(f"Failed to convert UserModel to User domain entity: {str(e)}", exc_info=True)
             return None
+    def find_by_username(self, username):
+        user = self._session.query(UserModel).filter_by(username=username).first()
+        return user
+
+    def username_exists(self, username):
+        return self._session.query(UserModel).filter_by(username=username).first() is not None

@@ -1,11 +1,11 @@
 from datetime import datetime, timezone
 from uuid import uuid4
-from app.extensions import db
+from integration.db import db
 
 
 class UserModel(db.Model):
     """SQLAlchemy model for User persistence"""
-    __tablename__ = "users"
+    __tablename__ = "ddd_users"
     
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid4()))
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)

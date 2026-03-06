@@ -4,17 +4,17 @@ Handles balance queries, deposits, withdrawals, and wallet activation
 """
 from flask import Blueprint, request, jsonify
 import logging
-from ddd.payment.domain.exceptions import (
-    WalletNotFoundError,
-    InsufficientBalanceError,
-    WalletInactiveError,
-)
+# from ddd.payment.domain.exceptions import (
+#     WalletNotFoundError,
+#     InsufficientBalanceError,
+#     WalletInactiveError,
+# )
 
 logger = logging.getLogger(__name__)
 
 
 def create_wallet_routes(container):
-    wallet_bp = Blueprint('wallet_api', __name__, url_prefix='/api/v1/wallet')
+    wallet_bp = Blueprint('wallet_api', __name__, url_prefix='/wallet')
     
     # ======================== GET /api/v1/wallet/<user_id>/balance ========================
     @wallet_bp.route('/<user_id>/balance', methods=['GET'])
@@ -82,8 +82,7 @@ def create_wallet_routes(container):
                 'new_balance': wallet.balance.amount
             }), 200
         
-        except WalletInactiveError as e:
-            return jsonify({'error': str(e)}), 402
+        
         except Exception as e:
             logger.error(f"Error depositing to wallet: {e}", exc_info=True)
             return jsonify({'error': str(e)}), 500
@@ -132,10 +131,8 @@ def create_wallet_routes(container):
                 'new_balance': wallet.balance.amount
             }), 200
         
-        except InsufficientBalanceError as e:
-            return jsonify({'error': str(e)}), 402
-        except WalletInactiveError as e:
-            return jsonify({'error': str(e)}), 403
+        
+        
         except Exception as e:
             logger.error(f"Error withdrawing from wallet: {e}", exc_info=True)
             return jsonify({'error': str(e)}), 500

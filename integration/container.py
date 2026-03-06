@@ -3,6 +3,10 @@ Service Container for Dependency Injection
 Manages registration and retrieval of services, repositories, and handlers
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from ddd.shared.infrastructure.event_dispatcher import InMemoryEventDispatcher, KafkaEventDispatcher
 from ddd.user_management.infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
 from ddd.user_management.application.commands.handlers.register_user_handler import (
@@ -37,7 +41,6 @@ from ddd.order_management.application.use_cases.create_order_use_case import Cre
 from ddd.product_catalog.infrastructure.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
 from ddd.payment.infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
 from ddd.order_management.infrastructure.services.inventory_service import InventoryService
-from app.services.kafka_producer_order_service import OrderKafkaProducer
 
 
 class ServiceContainer:
@@ -48,110 +51,43 @@ class ServiceContainer:
     Enables easy testing with fake implementations
     """
     
-    def __init__(self, db_session=None, use_kafka: bool = False):
+    def __init__(self, db=None, db_session=None, use_kafka: bool = False):
         """
         Initialize service container
         
         Args:
-            db_session: SQLAlchemy database session
+            db: SQLAlchemy instance (preferred - provides request-scoped session)
+            db_session: Explicit database session (legacy, for testing)
             use_kafka: Whether to use Kafka event dispatcher (True) or in-memory (False)
         """
         self._services = {}
+        self._db = db
         self._db_session = db_session
         self._use_kafka = use_kafka
         self._init_services()
     
+    @property
+    def session(self):
+        """Get current request-scoped session"""
+        if self._db:
+            return self._db.session
+        return self._db_session
+    
     def _init_services(self):
-        """Register all services, repositories, and handlers"""
+        """Register all services - most will use current scoped session via get() method"""
         
-        # ==== Event Dispatcher ====
+        # ==== Event Dispatcher (doesn't depend on session) ====
         if self._use_kafka:
-            kafka_producer = OrderKafkaProducer()
-            event_dispatcher = KafkaEventDispatcher(kafka_producer=kafka_producer)
+            try:
+                from app.services.kafka_producer_order_service import OrderKafkaProducer
+                kafka_producer = OrderKafkaProducer()
+                event_dispatcher = KafkaEventDispatcher(kafka_producer=kafka_producer)
+            except ImportError:
+                logger.warning("Kafka dependencies not available, using in-memory event dispatcher")
+                event_dispatcher = InMemoryEventDispatcher()
         else:
             event_dispatcher = InMemoryEventDispatcher()
         self._services['event_dispatcher'] = event_dispatcher
-        
-        # ==== Product Catalog ====
-        product_repository = SqlAlchemyProductRepository(self._db_session)
-        self._services['product_repository'] = product_repository
-        
-        # ==== Payment/Wallet ====
-        wallet_repository = SqlAlchemyWalletRepository(self._db_session)
-        self._services['wallet_repository'] = wallet_repository
-        
-        # ==== Inventory Service ====
-        inventory_service = InventoryService(product_repository)
-        self._services['inventory_service'] = inventory_service
-        
-        # ==== User Management ====
-        # Repositories
-        user_repository = SqlAlchemyUserRepository(self._db_session)
-        self._services['user_repository'] = user_repository
-        
-        # Command Handlers
-        self._services['register_user_handler'] = RegisterUserCommandHandler(
-            user_repository,
-            event_dispatcher,
-        )
-        self._services['change_password_handler'] = ChangePasswordCommandHandler(
-            user_repository,
-            event_dispatcher,
-        )
-        self._services['deactivate_user_handler'] = DeactivateUserCommandHandler(
-            user_repository,
-            event_dispatcher,
-        )
-        self._services['update_user_profile_handler'] = UpdateUserProfileCommandHandler(
-            user_repository,
-            event_dispatcher,
-        )
-        
-        # Query Handlers
-        self._services['get_user_by_email_handler'] = GetUserByEmailQueryHandler(user_repository)
-        self._services['get_user_by_id_handler'] = GetUserByIdQueryHandler(user_repository)
-        self._services['list_users_handler'] = ListUsersQueryHandler(user_repository)
-        self._services['verify_user_password_handler'] = VerifyUserPasswordQueryHandler(user_repository)
-        
-        # ==== Order Management ====
-        # Repositories
-        order_repository = SqlAlchemyOrderRepository(self._db_session)
-        self._services['order_repository'] = order_repository
-        
-        # Use Cases
-        create_order_use_case = CreateOrderUseCase(
-            order_repository=order_repository,
-            product_repository=product_repository,
-            wallet_repository=wallet_repository,
-            inventory_service=inventory_service,
-            event_dispatcher=event_dispatcher,
-        )
-        self._services['create_order_use_case'] = create_order_use_case
-        
-        # Command Handlers
-        self._services['create_order_handler'] = CreateOrderCommandHandler(create_order_use_case)
-        self._services['confirm_order_handler'] = ConfirmOrderCommandHandler(
-            order_repository,
-            event_dispatcher,
-        )
-        self._services['ship_order_handler'] = ShipOrderCommandHandler(
-            order_repository,
-            event_dispatcher,
-        )
-        self._services['complete_order_handler'] = CompleteOrderCommandHandler(
-            order_repository,
-            event_dispatcher,
-        )
-        self._services['cancel_order_handler'] = CancelOrderCommandHandler(
-            order_repository,
-            event_dispatcher,
-        )
-        
-        # Query Handlers
-        self._services['get_order_handler'] = GetOrderQueryHandler(order_repository)
-        self._services['get_customer_orders_handler'] = GetCustomerOrdersQueryHandler(order_repository)
-        self._services['get_seller_orders_handler'] = GetSellerOrdersQueryHandler(order_repository)
-        self._services['list_pending_orders_handler'] = ListPendingOrdersQueryHandler(order_repository)
     
     def get(self, service_name: str):
         """
@@ -164,11 +100,112 @@ class ServiceContainer:
             The requested service
             
         Raises:
-            KeyError: If service not found
+            KeyError: If service not found in services or known handlers
         """
-        if service_name not in self._services:
-            raise KeyError(f"Service '{service_name}' not found in container. Available: {list(self._services.keys())}")
-        return self._services[service_name]
+        # Non-session-dependent services
+        if service_name in self._services:
+            return self._services[service_name]
+        
+        # Create handler instances on-demand with fresh repositories
+        event_dispatcher = self._services.get('event_dispatcher')
+        
+        # User handlers
+        if service_name == 'register_user_handler':
+            from ddd.user_management.infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+            return RegisterUserCommandHandler(SqlAlchemyUserRepository(self.session), event_dispatcher)
+        elif service_name == 'get_user_by_id_handler':
+            from ddd.user_management.infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+            return GetUserByIdQueryHandler(SqlAlchemyUserRepository(self.session))
+        elif service_name == 'get_user_by_email_handler':
+            from ddd.user_management.infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+            return GetUserByEmailQueryHandler(SqlAlchemyUserRepository(self.session))
+        elif service_name == 'change_password_handler':
+            from ddd.user_management.infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+            return ChangePasswordCommandHandler(SqlAlchemyUserRepository(self.session), event_dispatcher)
+        elif service_name == 'deactivate_user_handler':
+            from ddd.user_management.infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+            return DeactivateUserCommandHandler(SqlAlchemyUserRepository(self.session), event_dispatcher)
+        elif service_name == 'list_users_handler':
+            from ddd.user_management.infrastructure.persistence.sqlalchemy_user_repository import SqlAlchemyUserRepository
+            return ListUsersQueryHandler(SqlAlchemyUserRepository(self.session))
+        
+        # Order handlers
+        elif service_name == 'get_order_handler':
+            from ddd.order_management.infrastructure.persistence.sqlalchemy_order_repository import SqlAlchemyOrderRepository
+            return GetOrderQueryHandler(SqlAlchemyOrderRepository(self.session))
+        elif service_name == 'get_customer_orders_handler':
+            from ddd.order_management.infrastructure.persistence.sqlalchemy_order_repository import SqlAlchemyOrderRepository
+            return GetCustomerOrdersQueryHandler(SqlAlchemyOrderRepository(self.session))
+        elif service_name == 'get_seller_orders_handler':
+            from ddd.order_management.infrastructure.persistence.sqlalchemy_order_repository import SqlAlchemyOrderRepository
+            return GetSellerOrdersQueryHandler(SqlAlchemyOrderRepository(self.session))
+        elif service_name == 'list_pending_orders_handler':
+            from ddd.order_management.infrastructure.persistence.sqlalchemy_order_repository import SqlAlchemyOrderRepository
+            return ListPendingOrdersQueryHandler(SqlAlchemyOrderRepository(self.session))
+        elif service_name == 'create_order_handler':
+            from ddd.order_management.infrastructure.persistence.sqlalchemy_order_repository import SqlAlchemyOrderRepository
+            from ddd.product_catalog.infrastructure.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
+            from ddd.payment.infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+            order_repo = SqlAlchemyOrderRepository(self.session)
+            product_repo = SqlAlchemyProductRepository(self.session)
+            wallet_repo = SqlAlchemyWalletRepository(self.session)
+            inventory_service = InventoryService(product_repo)
+            use_case = CreateOrderUseCase(order_repo, product_repo, wallet_repo, inventory_service, event_dispatcher)
+            return CreateOrderCommandHandler(use_case)
+        elif service_name == 'confirm_order_handler':
+            from ddd.order_management.infrastructure.persistence.sqlalchemy_order_repository import SqlAlchemyOrderRepository
+            return ConfirmOrderCommandHandler(SqlAlchemyOrderRepository(self.session), event_dispatcher)
+        elif service_name == 'ship_order_handler':
+            from ddd.order_management.infrastructure.persistence.sqlalchemy_order_repository import SqlAlchemyOrderRepository
+            return ShipOrderCommandHandler(SqlAlchemyOrderRepository(self.session), event_dispatcher)
+        elif service_name == 'complete_order_handler':
+            from ddd.order_management.infrastructure.persistence.sqlalchemy_order_repository import SqlAlchemyOrderRepository
+            return CompleteOrderCommandHandler(SqlAlchemyOrderRepository(self.session), event_dispatcher)
+        elif service_name == 'cancel_order_handler':
+            from ddd.order_management.infrastructure.persistence.sqlalchemy_order_repository import SqlAlchemyOrderRepository
+            return CancelOrderCommandHandler(SqlAlchemyOrderRepository(self.session), event_dispatcher)
+        
+        # Wallet handlers
+        elif service_name == 'deposit_handler':
+            from ddd.payment.infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+            return DepositCommandHandler(SqlAlchemyWalletRepository(self.session), event_dispatcher)
+        elif service_name == 'withdraw_handler':
+            from ddd.payment.infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+            return WithdrawCommandHandler(SqlAlchemyWalletRepository(self.session), event_dispatcher)
+        elif service_name == 'get_wallet_balance_handler':
+            from ddd.payment.infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+            return GetWalletBalanceQueryHandler(SqlAlchemyWalletRepository(self.session))
+        elif service_name == 'activate_wallet_handler':
+            from ddd.payment.infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+            return ActivateWalletCommandHandler(SqlAlchemyWalletRepository(self.session), event_dispatcher)
+        elif service_name == 'deactivate_wallet_handler':
+            from ddd.payment.infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+            return DeactivateWalletCommandHandler(SqlAlchemyWalletRepository(self.session), event_dispatcher)
+        
+        # Product handlers
+        elif service_name == 'get_product_handler':
+            from ddd.product_catalog.infrastructure.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
+            return GetProductQueryHandler(SqlAlchemyProductRepository(self.session))
+        elif service_name == 'get_seller_products_handler':
+            from ddd.product_catalog.infrastructure.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
+            return GetSellerProductsQueryHandler(SqlAlchemyProductRepository(self.session))
+        elif service_name == 'search_products_handler':
+            from ddd.product_catalog.infrastructure.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
+            return SearchProductsQueryHandler(SqlAlchemyProductRepository(self.session))
+        elif service_name == 'create_product_handler':
+            from ddd.product_catalog.infrastructure.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
+            return CreateProductCommandHandler(SqlAlchemyProductRepository(self.session), event_dispatcher)
+        elif service_name == 'update_product_handler':
+            from ddd.product_catalog.infrastructure.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
+            return UpdateProductCommandHandler(SqlAlchemyProductRepository(self.session), event_dispatcher)
+        elif service_name == 'activate_product_handler':
+            from ddd.product_catalog.infrastructure.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
+            return ActivateProductCommandHandler(SqlAlchemyProductRepository(self.session), event_dispatcher)
+        elif service_name == 'deactivate_product_handler':
+            from ddd.product_catalog.infrastructure.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
+            return DeactivateProductCommandHandler(SqlAlchemyProductRepository(self.session), event_dispatcher)
+        
+        raise KeyError(f"Service '{service_name}' not found in container")
     
     def register(self, name: str, instance):
         """

@@ -4,10 +4,10 @@ Handles product creation, updates, and searches
 """
 from flask import Blueprint, request, jsonify
 import logging
-from ddd.product_catalog.domain.exceptions import (
-    ProductNotFoundError,
-    InvalidProductError,
-)
+# from ddd.product_catalog.domain.exceptions import (
+#     ProductNotFoundError,
+#     InvalidProductError,
+# )
 from ddd.product_catalog.domain.entities.product import Product
 from ddd.shared.domain.value_objects import Money
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def create_product_routes(container):
-    product_bp = Blueprint('product_api', __name__, url_prefix='/api/v1/products')
+    product_bp = Blueprint('product_api', __name__, url_prefix='/products')
     
     @product_bp.route('', methods=['POST'])
     def create_product():
@@ -62,8 +62,8 @@ def create_product_routes(container):
                 }
             }), 201
         
-        except InvalidProductError as e:
-            return jsonify({'error': str(e)}), 422
+        # except InvalidProductError as e:
+        #     return jsonify({'error': str(e)}), 422
         except Exception as e:
             logger.error(f"Error creating product: {e}", exc_info=True)
             return jsonify({'error': str(e)}), 500
@@ -92,8 +92,8 @@ def create_product_routes(container):
                 'is_active': product.is_active
             }), 200
         
-        except ProductNotFoundError:
-            return jsonify({'error': 'Product not found'}), 404
+        # except ProductNotFoundError:
+        #     return jsonify({'error': 'Product not found'}), 404
         except Exception as e:
             logger.error(f"Error fetching product: {e}", exc_info=True)
             return jsonify({'error': str(e)}), 500

@@ -1,12 +1,12 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 from decimal import Decimal
-from app.extensions import db
+from integration.db import db
 
 
 class ProductModel(db.Model):
     """SQLAlchemy model for Product persistence"""
-    __tablename__ = "products"
+    __tablename__ = "ddd_products"
     
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid4()))
     seller_id = db.Column(db.String(36), nullable=False, index=True)

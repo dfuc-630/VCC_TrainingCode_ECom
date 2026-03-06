@@ -1,12 +1,12 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 from decimal import Decimal
-from app.extensions import db
+from integration.db import db
 
 
 class WalletModel(db.Model):
     """SQLAlchemy model for Wallet persistence"""
-    __tablename__ = "wallets"
+    __tablename__ = "ddd_wallets"
     
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid4()))
     user_id = db.Column(db.String(36), unique=True, nullable=False, index=True)

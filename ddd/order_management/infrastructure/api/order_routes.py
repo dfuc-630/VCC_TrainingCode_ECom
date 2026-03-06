@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def create_order_routes(container):
-    order_bp = Blueprint('order_api', __name__, url_prefix='/api/v1/orders')
+    order_bp = Blueprint('order_api', __name__, url_prefix='/orders')
     
     @order_bp.route('', methods=['POST'])
     def create_order():

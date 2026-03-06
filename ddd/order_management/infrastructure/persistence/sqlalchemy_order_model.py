@@ -1,12 +1,12 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 from decimal import Decimal
-from app.extensions import db
+from integration.db import db
 
 
 class OrderModel(db.Model):
     """SQLAlchemy model for Order persistence"""
-    __tablename__ = "orders"
+    __tablename__ = "ddd_orders"
     
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid4()))
     order_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
@@ -50,10 +50,10 @@ class OrderModel(db.Model):
 
 class OrderItemModel(db.Model):
     """SQLAlchemy model for OrderItem persistence"""
-    __tablename__ = "order_items"
+    __tablename__ = "ddd_order_items"
     
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid4()))
-    order_id = db.Column(db.String(36), db.ForeignKey('orders.id'), nullable=False)
+    order_id = db.Column(db.String(36), db.ForeignKey('ddd_orders.id'), nullable=False)
     
     product_id = db.Column(db.String(36), nullable=False, index=True)
     product_name = db.Column(db.String(255), nullable=False)
