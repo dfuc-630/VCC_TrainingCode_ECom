@@ -10,7 +10,7 @@ from ddd.user_management.infrastructure.api.user_routes import create_user_route
 from ddd.order_management.infrastructure.api.order_routes import create_order_routes
 from ddd.payment.infrastructure.api.wallet_routes import create_wallet_routes
 from ddd.product_catalog.infrastructure.api.product_routes import create_product_routes
-
+from flask import request
 # Import models to register with db
 from ddd.user_management.infrastructure.persistence.sqlalchemy_user_model import UserModel
 from ddd.order_management.infrastructure.persistence.sqlalchemy_order_model import OrderModel, OrderItemModel
@@ -56,7 +56,10 @@ def create_ddd_app(config=None):
     # Create tables
     with app.app_context():
         db.create_all()
-    
+    @app.before_request
+    def log_request():
+        print(f"{request.method} {request.path}")
+
     return app
 
 

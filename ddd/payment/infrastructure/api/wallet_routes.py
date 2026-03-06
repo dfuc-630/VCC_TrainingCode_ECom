@@ -76,7 +76,7 @@ def create_wallet_routes(container):
             
             wallet_repo.save(wallet)
             
-            logger.info(f"✓ Deposit successful: {amount} to user {user_id}")
+            logger.info(f"Deposit successful: {amount} to user {user_id}")
             return jsonify({
                 'message': 'Deposit successful',
                 'new_balance': wallet.balance.amount

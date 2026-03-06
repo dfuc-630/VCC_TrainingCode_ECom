@@ -12,37 +12,13 @@ from ddd.user_management.domain.exceptions import UserAlreadyExistsError
 class RegisterUserCommandHandler:
     """Handler for registering a new user"""
     
-    def __init__(self, user_repository, event_dispatcher):
-        """
-        Args:
-            user_repository: Repository for persisting users
-            event_dispatcher: Dispatcher for domain events
-        """
+    def __init__(self, user_repository, event_dispatcher, wallet_repository=None):
+        
         self.user_repository = user_repository
         self.event_dispatcher = event_dispatcher
+        self.wallet_repository = wallet_repository
     
     def execute(self, command: RegisterUserCommand) -> CreateUserResponseDTO:
-        """
-        Execute user registration
-        
-        Steps:
-        1. Validate email doesn't exist
-        2. Create user aggregate with rich business logic
-        3. Save to repository
-        4. Dispatch domain events (e.g., for Kafka)
-        5. Clear uncommitted events
-        
-        Args:
-            command: RegisterUserCommand with user data
-            
-        Returns:
-            CreateUserResponseDTO with user_id and confirmation
-            
-        Raises:
-            UserAlreadyExistsError: If email already registered
-            InvalidEmailError: If email format invalid
-            InvalidPasswordError: If password too weak
-        """
         # 1. Create value objects with validation
         email = Email(command.email)
         
@@ -65,11 +41,30 @@ class RegisterUserCommandHandler:
         # 4. Save user to repository
         self.user_repository.save(user)
         
-        # 5. Dispatch all domain events (UserCreatedEvent, etc.)
+        # 5. Create wallet for the user if wallet_repository is available
+        if self.wallet_repository:
+            print("Wallet creation logic executed.")
+            print(f"Wallet Repository: {self.wallet_repository}")
+            
+            from ddd.payment.domain.entities.wallet import Wallet
+            from ddd.shared.domain.value_objects.money import Money
+            wallet = Wallet.create(user_id=user.id, initial_balance=Money(amount=0, currency='VND'))
+            
+            try:
+                self.wallet_repository.save(wallet)
+                print(f"Wallet saved successfully")
+            except Exception as e:
+                print(f"Error saving wallet: {e}", exc_info=True)
+        else:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning("wallet_repository is None, wallet not created")
+        
+        # 6. Dispatch all domain events (UserCreatedEvent, etc.)
         for event in user.get_uncommitted_events():
             self.event_dispatcher.dispatch(event)
         
-        # 6. Clear uncommitted events after dispatch
+        # 7. Clear uncommitted events after dispatch
         user.clear_uncommitted_events()
         
         return CreateUserResponseDTO(
@@ -157,6 +152,32 @@ class UpdateUserProfileCommandHandler:
             phone=phone,
         )
         
+        self.user_repository.save(user)
+        
+        for event in user.get_uncommitted_events():
+            self.event_dispatcher.dispatch(event)
+        user.clear_uncommitted_events()
+        
+        return UserDTO.from_entity(user)
+
+
+class ActivateUserCommandHandler:
+    """Handler for activating user account"""
+    
+    def __init__(self, user_repository, event_dispatcher):
+        self.user_repository = user_repository
+        self.event_dispatcher = event_dispatcher
+    
+    def execute(self, command):
+        """Execute user activation"""
+        from ddd.user_management.application.commands.register_user_command import ActivateUserCommand
+        from ddd.user_management.domain.exceptions import UserNotFoundError
+        
+        user = self.user_repository.find_by_id(command.user_id)
+        if not user:
+            raise UserNotFoundError(f"User {command.user_id} not found")
+        
+        user.activate()
         self.user_repository.save(user)
         
         for event in user.get_uncommitted_events():

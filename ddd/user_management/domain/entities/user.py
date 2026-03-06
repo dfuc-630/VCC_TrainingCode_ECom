@@ -17,7 +17,7 @@ from ddd.user_management.domain.exceptions import (
     UserAlreadyDeactivatedError,
     CannotLoginError,
 )
-
+from ddd.user_management.domain.exceptions import InvalidPasswordError
 class User(AggregateRoot):
     
     def __init__(self, user_id: str, email: Email, password: Password, role: Role, 
@@ -103,7 +103,6 @@ class User(AggregateRoot):
             InvalidPasswordError: If old password is incorrect
         """
         if not self.verify_password(old_password_plain):
-            from ddd.user_management.domain.exceptions import InvalidPasswordError
             raise InvalidPasswordError("Current password is incorrect")
         
         self._password = Password.from_plain_text(new_password_plain)

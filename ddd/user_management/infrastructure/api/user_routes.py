@@ -17,7 +17,9 @@ from ddd.user_management.domain.exceptions import (
     InvalidEmailError,
     InvalidPasswordError,
 )
-
+from ddd.user_management.application.commands.login_user_command import (
+    LoginUserCommand,
+)
 
 def create_user_routes(container):
     user_bp = Blueprint('user_api', __name__, url_prefix='/users')
@@ -147,6 +149,34 @@ def create_user_routes(container):
         
         except UserNotFoundError as e:
             return jsonify({'error': str(e)}), 404
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @user_bp.route('/login', methods=['POST'])
+    def login():
+        try:
+            data = request.get_json()
+
+            # Validate required fields
+            if not data.get('email') or not data.get('password'):
+                return jsonify({'error': 'Email and password are required'}), 400
+
+            # Create command
+            command = LoginUserCommand(
+                email=data['email'],
+                password=data['password']
+            )
+
+            # Execute via handler
+            handler = container.get('login_user_handler')
+            result = handler.execute(command)
+
+            return jsonify(result.to_dict()), 200
+
+        except UserNotFoundError as e:
+            return jsonify({'error': str(e)}), 404
+        except InvalidPasswordError as e:
+            return jsonify({'error': str(e)}), 401
         except Exception as e:
             return jsonify({'error': str(e)}), 500
     

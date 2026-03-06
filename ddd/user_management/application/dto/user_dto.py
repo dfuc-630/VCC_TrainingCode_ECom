@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 from datetime import datetime
-
+from ddd.user_management.domain.entities.user import User
 
 @dataclass
 class UserDTO:
@@ -18,7 +18,6 @@ class UserDTO:
     @staticmethod
     def from_entity(user) -> 'UserDTO':
         """Convert User entity to DTO"""
-        from ddd.user_management.domain.entities.user import User
         
         if not isinstance(user, User):
             return None

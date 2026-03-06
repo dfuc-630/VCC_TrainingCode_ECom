@@ -7,8 +7,15 @@ from dotenv import load_dotenv
 from integration.flask_app import create_ddd_app
 
 # Load environment variables
-load_dotenv()
+import logging
 
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s %(levelname)s %(name)s : %(message)s',
+    force=True
+)
+
+logging.getLogger('werkzeug').setLevel(logging.INFO)
 
 def create_config():
     """Create app configuration"""
@@ -30,20 +37,22 @@ if __name__ == '__main__':
     config = create_config()
     app = create_ddd_app(config)
     
+    
     host = os.getenv('HOST', '0.0.0.0')
     port = int(os.getenv('PORT', 5000))
     debug = config['DEBUG']
     
-    print(f"🚀 Starting DDD Flask App")
+    print(f" Starting DDD Flask App")
     print(f"   Host: {host}")
     print(f"   Port: {port}")
     print(f"   Debug: {debug}")
     print(f"   Database: {config['SQLALCHEMY_DATABASE_URI']}")
     print(f"   Kafka: {'Enabled' if config['USE_KAFKA'] else 'Disabled (In-Memory)'}")
     print()
-    
+
     app.run(
         host=host,
-        port=port,
+        port=5001,
         debug=debug,
+        use_reloader=False
     )

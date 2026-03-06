@@ -10,7 +10,7 @@ class Wallet(AggregateRoot):
     def __init__(self, wallet_id: str, user_id: str, balance: Money, is_active: bool = True,
         created_at: datetime = None, updated_at: datetime = None,):
 
-        super().__init__(id=wallet_id, created_at=created_at, updated_at=updated_at)
+        super().__init__(aggregate_id=wallet_id)
         self.user_id = user_id
         self.balance = balance
         self.is_active = is_active
