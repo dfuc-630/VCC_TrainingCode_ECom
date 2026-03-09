@@ -47,6 +47,10 @@ def create_ddd_app(config=None):
     )
     app.container = container
     
+    # Setup event handlers (must be in app context)
+    with app.app_context():
+        container.setup_event_handlers()
+    
     # Register blueprints
     app.register_blueprint(create_user_routes(container), url_prefix='/api/v1/users')
     app.register_blueprint(create_order_routes(container), url_prefix='/api/v1/orders')

@@ -1,0 +1,3 @@
+"""
+Product catalog application layer
+"""

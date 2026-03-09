@@ -17,7 +17,7 @@ class Money(ValueObject):
             raise InvalidValueObjectError("Amount cannot be negative")
         
         # Round to 2 decimal places (standard for currency)
-        self._amount = amount.quantize(Decimal('0.01'))
+        self._amount = Decimal(str(amount)).quantize(Decimal('0.01'))
         self._currency = currency
     
     @property

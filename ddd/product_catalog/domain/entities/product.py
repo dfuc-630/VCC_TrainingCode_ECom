@@ -9,7 +9,7 @@ class Product(AggregateRoot):
     def __init__(self, product_id: str, seller_id: str, name: str, description: str, price: Money, 
         quantity: int, is_active: bool = True, created_at: datetime = None, updated_at: datetime = None,):
         
-        super().__init__(id=product_id, created_at=created_at, updated_at=updated_at)
+        super().__init__(product_id)
         self.seller_id = seller_id
         self.name = name
         self.description = description

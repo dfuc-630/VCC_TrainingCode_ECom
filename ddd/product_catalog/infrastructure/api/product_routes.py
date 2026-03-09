@@ -4,12 +4,17 @@ Handles product creation, updates, and searches
 """
 from flask import Blueprint, request, jsonify
 import logging
-# from ddd.product_catalog.domain.exceptions import (
-#     ProductNotFoundError,
-#     InvalidProductError,
-# )
-from ddd.product_catalog.domain.entities.product import Product
-from ddd.shared.domain.value_objects import Money
+from ddd.product_catalog.application.commands import (
+    CreateProductCommand,
+    UpdateProductCommand,
+    ActivateProductCommand,
+    DeactivateProductCommand,
+)
+from ddd.product_catalog.application.queries.product_queries import (
+    GetProductQuery,
+    GetSellerProductsQuery,
+    SearchProductsQuery,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +32,6 @@ def create_product_routes(container):
             required = ['seller_id', 'name', 'description', 'price', 'quantity']
             missing = [f for f in required if f not in data]
             if missing:
-                logger.warning(f"Missing fields: {missing}")
                 return jsonify({'error': 'Missing required fields', 'missing': missing}), 400
             
             if data['price'] <= 0:
@@ -36,34 +40,27 @@ def create_product_routes(container):
             if data['quantity'] < 0:
                 return jsonify({'error': 'Quantity must be non-negative'}), 422
             
-            logger.info(f"Creating product: {data['name']} (seller: {data['seller_id']})")
-            
-            
-            product = Product.create(
+            # Create command
+            command = CreateProductCommand(
                 seller_id=data['seller_id'],
                 name=data['name'],
                 description=data['description'],
-                price=Money(amount=data['price'], currency='VND'),
-                quantity=data['quantity']
+                price=data['price'],
+                quantity=data['quantity'],
+                category_id=data.get('category_id'),
             )
             
-            product_repo = container.get('product_repository')
-            product_repo.save(product)
+            # Execute via handler
+            handler = container.get('create_product_handler')
+            result = handler.execute(command)
             
-            logger.info(f"✓ Product created: {product.id}")
             return jsonify({
                 'message': 'Product created',
-                'product': {
-                    'id': product.id,
-                    'name': product.name,
-                    'price': product.price.amount,
-                    'quantity': product.quantity,
-                    'is_active': product.is_active
-                }
+                'product': result
             }), 201
         
-        # except InvalidProductError as e:
-        #     return jsonify({'error': str(e)}), 422
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 422
         except Exception as e:
             logger.error(f"Error creating product: {e}", exc_info=True)
             return jsonify({'error': str(e)}), 500
@@ -74,26 +71,12 @@ def create_product_routes(container):
     def get_product(product_id):
         """Get product details"""
         try:
-            logger.info(f"Fetching product: {product_id}")
+            query = GetProductQuery(product_id=product_id)
+            handler = container.get('get_product_handler')
+            result = handler.execute(query)
             
-            product_repo = container.get('product_repository')
-            product = product_repo.find_by_id(product_id)
-            
-            if not product:
-                return jsonify({'error': 'Product not found'}), 404
-            
-            return jsonify({
-                'id': product.id,
-                'seller_id': product.seller_id,
-                'name': product.name,
-                'description': product.description,
-                'price': product.price.amount,
-                'quantity': product.quantity,
-                'is_active': product.is_active
-            }), 200
+            return jsonify(result), 200
         
-        # except ProductNotFoundError:
-        #     return jsonify({'error': 'Product not found'}), 404
         except Exception as e:
             logger.error(f"Error fetching product: {e}", exc_info=True)
             return jsonify({'error': str(e)}), 500
@@ -109,49 +92,30 @@ def create_product_routes(container):
                 return jsonify({'error': 'Request body required'}), 400
             
             seller_id = data.get('seller_id')
+            if not seller_id:
+                return jsonify({'error': 'seller_id is required'}), 400
             
-            logger.info(f"Updating product: {product_id}")
+            # Create command
+            command = UpdateProductCommand(
+                product_id=product_id,
+                seller_id=seller_id,
+                name=data.get('name'),
+                description=data.get('description'),
+                price=data.get('price'),
+                quantity=data.get('quantity'),
+            )
             
-            product_repo = container.get('product_repository')
-            product = product_repo.find_by_id(product_id)
+            # Execute via handler
+            handler = container.get('update_product_handler')
+            result = handler.execute(command)
             
-            if not product:
-                return jsonify({'error': 'Product not found'}), 404
-            
-            if product.seller_id != seller_id:
-                logger.warning(f"Unauthorized update: {seller_id}")
-                return jsonify({'error': 'Unauthorized'}), 403
-            
-            if 'price' in data and data['price'] <= 0:
-                return jsonify({'error': 'Price must be positive'}), 422
-            
-            if 'quantity' in data and data['quantity'] < 0:
-                return jsonify({'error': 'Quantity must be non-negative'}), 422
-            
-            if 'name' in data:
-                product.name = data['name']
-            if 'description' in data:
-                product.description = data['description']
-            if 'price' in data:
-                from ddd.shared.domain.value_objects import Money
-                product.price = Money(amount=data['price'], currency='VND')
-            if 'quantity' in data:
-                product.quantity = data['quantity']
-            
-            product_repo.save(product)
-            
-            logger.info(f"✓ Product updated: {product_id}")
             return jsonify({
                 'message': 'Product updated',
-                'product': {
-                    'id': product.id,
-                    'name': product.name,
-                    'price': product.price.amount,
-                    'quantity': product.quantity,
-                    'is_active': product.is_active
-                }
+                'product': result
             }), 200
         
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 422
         except Exception as e:
             logger.error(f"Error updating product: {e}", exc_info=True)
             return jsonify({'error': str(e)}), 500
@@ -165,27 +129,22 @@ def create_product_routes(container):
             data = request.get_json() or {}
             seller_id = data.get('seller_id')
             
-            logger.info(f"Activating product: {product_id}")
+            if not seller_id:
+                return jsonify({'error': 'seller_id is required'}), 400
             
-            product_repo = container.get('product_repository')
-            product = product_repo.find_by_id(product_id)
+            # Create command
+            command = ActivateProductCommand(
+                product_id=product_id,
+                seller_id=seller_id,
+            )
             
-            if not product:
-                return jsonify({'error': 'Product not found'}), 404
+            # Execute via handler
+            handler = container.get('activate_product_handler')
+            result = handler.execute(command)
             
-            if product.seller_id != seller_id:
-                return jsonify({'error': 'Unauthorized'}), 403
-            
-            if product.is_active:
-                return jsonify({'message': 'Product already active'}), 200
-            
-            product.activate()
-            product_repo.save(product)
-            
-            logger.info(f"✓ Product activated: {product_id}")
             return jsonify({
                 'message': 'Product activated',
-                'is_active': product.is_active
+                'data': result
             }), 200
         
         except Exception as e:
@@ -201,27 +160,22 @@ def create_product_routes(container):
             data = request.get_json() or {}
             seller_id = data.get('seller_id')
             
-            logger.info(f"Deactivating product: {product_id}")
+            if not seller_id:
+                return jsonify({'error': 'seller_id is required'}), 400
             
-            product_repo = container.get('product_repository')
-            product = product_repo.find_by_id(product_id)
+            # Create command
+            command = DeactivateProductCommand(
+                product_id=product_id,
+                seller_id=seller_id,
+            )
             
-            if not product:
-                return jsonify({'error': 'Product not found'}), 404
+            # Execute via handler
+            handler = container.get('deactivate_product_handler')
+            result = handler.execute(command)
             
-            if product.seller_id != seller_id:
-                return jsonify({'error': 'Unauthorized'}), 403
-            
-            if not product.is_active:
-                return jsonify({'message': 'Product already inactive'}), 200
-            
-            product.deactivate()
-            product_repo.save(product)
-            
-            logger.info(f"✓ Product deactivated: {product_id}")
             return jsonify({
                 'message': 'Product deactivated',
-                'is_active': product.is_active
+                'data': result
             }), 200
         
         except Exception as e:
@@ -238,24 +192,17 @@ def create_product_routes(container):
             offset = int(request.args.get('offset', 0))
             active_only = request.args.get('active_only', 'true').lower() == 'true'
             
-            logger.info(f"Fetching products for seller: {seller_id}")
+            query = GetSellerProductsQuery(
+                seller_id=seller_id,
+                limit=limit,
+                offset=offset,
+                active_only=active_only,
+            )
             
-            product_repo = container.get('product_repository')
-            products = product_repo.find_by_seller_id(seller_id)
+            handler = container.get('get_seller_products_handler')
+            results = handler.execute(query)
             
-            if active_only:
-                products = [p for p in products if p.is_active]
-            
-            products = products[offset:offset+limit]
-            
-            logger.info(f"✓ Fetched {len(products)} products")
-            return jsonify([{
-                'id': p.id,
-                'name': p.name,
-                'price': p.price.amount,
-                'quantity': p.quantity,
-                'is_active': p.is_active
-            } for p in products]), 200
+            return jsonify(results), 200
         
         except Exception as e:
             logger.error(f"Error fetching seller products: {e}", exc_info=True)
@@ -267,37 +214,24 @@ def create_product_routes(container):
     def search_products():
         """Search products by keyword"""
         try:
-            query = request.args.get('q', '')
+            search_query = request.args.get('q', '')
             seller_id = request.args.get('seller_id')
             active_only = request.args.get('active_only', 'true').lower() == 'true'
             limit = int(request.args.get('limit', 50))
             offset = int(request.args.get('offset', 0))
             
-            logger.info(f"Searching products: q='{query}'")
+            query = SearchProductsQuery(
+                query=search_query,
+                seller_id=seller_id,
+                active_only=active_only,
+                limit=limit,
+                offset=offset,
+            )
             
-            product_repo = container.get('product_repository')
-            all_products = product_repo.find_active(skip=0, limit=1000)
+            handler = container.get('search_products_handler')
+            results = handler.execute(query)
             
-            if query:
-                all_products = [
-                    p for p in all_products 
-                    if query.lower() in p.name.lower() or query.lower() in p.description.lower()
-                ]
-            
-            if seller_id:
-                all_products = [p for p in all_products if p.seller_id == seller_id]
-            
-            products = all_products[offset:offset+limit]
-            
-            logger.info(f"✓ Found {len(products)} products")
-            return jsonify([{
-                'id': p.id,
-                'seller_id': p.seller_id,
-                'name': p.name,
-                'price': p.price.amount,
-                'quantity': p.quantity,
-                'is_active': p.is_active
-            } for p in products]), 200
+            return jsonify(results), 200
         
         except Exception as e:
             logger.error(f"Error searching products: {e}", exc_info=True)

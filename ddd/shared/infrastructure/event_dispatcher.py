@@ -82,7 +82,7 @@ class InMemoryEventDispatcher(EventDispatcher):
         if event_type not in self._subscribers:
             self._subscribers[event_type] = []
         self._subscribers[event_type].append(handler)
-        logger.info(f"Handler {handler.__name__} subscribed to {event_type.__name__}")
+        logger.info(f"Handler {handler.__class__.__name__} subscribed to {event_type.__name__}")
     
     def dispatch(self, event: DomainEvent) -> None:
         event_type = type(event)
@@ -90,7 +90,7 @@ class InMemoryEventDispatcher(EventDispatcher):
         
         for handler in handlers:
             try:
-                logger.info(f"Dispatching {event_type.__name__} to {handler.__name__}")
+                logger.info(f"Dispatching {event_type.__name__} to {handler.__class__.__name__}")
                 handler(event)
             except Exception as e:
                 logger.error(f"Error handling event {event_type.__name__}: {e}", exc_info=True)
@@ -117,7 +117,7 @@ class KafkaEventDispatcher(EventDispatcher):
         if event_type not in self._subscribers:
             self._subscribers[event_type] = []
         self._subscribers[event_type].append(handler)
-        logger.info(f"Handler {handler.__name__} subscribed to {event_type.__name__}")
+        logger.info(f"Handler {handler.__class__.__name__} subscribed to {event_type.__name__}")
     
     def dispatch(self, event: DomainEvent) -> None:
         """Dispatch event via Kafka"""

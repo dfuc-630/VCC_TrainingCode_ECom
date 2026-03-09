@@ -42,6 +42,26 @@ from ddd.order_management.application.use_cases.create_order_use_case import Cre
 
 from ddd.product_catalog.infrastructure.persistence.sqlalchemy_product_repository import SqlAlchemyProductRepository
 from ddd.payment.infrastructure.persistence.sqlalchemy_wallet_repository import SqlAlchemyWalletRepository
+from ddd.payment.application.event_handlers import CreateWalletOnUserCreatedHandler
+from ddd.payment.application.commands.handlers import (
+    DepositToWalletCommandHandler,
+    WithdrawFromWalletCommandHandler,
+    ActivateWalletCommandHandler,
+    DeactivateWalletCommandHandler,
+)
+from ddd.payment.application.queries.handlers import GetWalletBalanceQueryHandler
+from ddd.product_catalog.application.commands.handlers import (
+    CreateProductCommandHandler,
+    UpdateProductCommandHandler,
+    ActivateProductCommandHandler,
+    DeactivateProductCommandHandler,
+)
+from ddd.product_catalog.application.queries.handlers import (
+    GetProductQueryHandler,
+    GetSellerProductsQueryHandler,
+    SearchProductsQueryHandler,
+)
+from ddd.user_management.domain.events import UserCreatedEvent
 from ddd.order_management.infrastructure.services.inventory_service import InventoryService
 from app.services.kafka_producer_order_service import OrderKafkaProducer
 
@@ -78,17 +98,38 @@ class ServiceContainer:
     def _init_services(self):
         """Register all services - most will use current scoped session via get() method"""
         
-        # ==== Event Dispatcher (doesn't depend on session) ====
+        # ==== Event Dispatcher for general commands (InMemory) ====
+        # Used for user, product, and other non-order domain events
+        event_dispatcher = InMemoryEventDispatcher()
+        self._services['event_dispatcher'] = event_dispatcher
+        
+        # ==== Event Dispatcher for orders (Kafka or InMemory based on config) ====
+        # Used specifically for order creation/management
         if self._use_kafka:
             try:
                 kafka_producer = OrderKafkaProducer()
-                event_dispatcher = KafkaEventDispatcher(kafka_producer=kafka_producer)
+                order_event_dispatcher = KafkaEventDispatcher(kafka_producer=kafka_producer)
             except ImportError:
-                logger.warning("Kafka dependencies not available, using in-memory event dispatcher")
-                event_dispatcher = InMemoryEventDispatcher()
+                logger.warning("Kafka dependencies not available, using in-memory event dispatcher for orders")
+                order_event_dispatcher = InMemoryEventDispatcher()
         else:
-            event_dispatcher = InMemoryEventDispatcher()
-        self._services['event_dispatcher'] = event_dispatcher
+            order_event_dispatcher = InMemoryEventDispatcher()
+        self._services['order_event_dispatcher'] = order_event_dispatcher
+    
+    def setup_event_handlers(self):
+        """
+        Setup event handlers subscriptions.
+        Must be called after app has request context (in app context)
+        """
+        # Get the event dispatcher
+        event_dispatcher = self._services['event_dispatcher']
+        
+        # Register event handlers
+        # Payment domain listens to UserCreatedEvent from User domain and creates wallet
+        wallet_repository = SqlAlchemyWalletRepository(self.session)
+        wallet_handler = CreateWalletOnUserCreatedHandler(wallet_repository)
+        event_dispatcher.subscribe(UserCreatedEvent, wallet_handler)
+        logger.info("CreateWalletOnUserCreatedHandler registered")
     
     def get(self, service_name: str):
         """
@@ -105,14 +146,14 @@ class ServiceContainer:
         """
         # Non-session-dependent services
         if service_name in self._services:
-            return self._services[service_name]
+            return self._services[service_name] # các service đã được khởi tạo sẵn
         
         # Create handler instances on-demand with fresh repositories
         event_dispatcher = self._services.get('event_dispatcher')
         
         # User handlers
         if service_name == 'register_user_handler':
-            return RegisterUserCommandHandler(SqlAlchemyUserRepository(self.session), event_dispatcher, SqlAlchemyWalletRepository(self.session))
+            return RegisterUserCommandHandler(SqlAlchemyUserRepository(self.session), event_dispatcher)
         
         elif service_name == 'get_user_by_id_handler':
             return GetUserByIdQueryHandler(SqlAlchemyUserRepository(self.session))
@@ -154,21 +195,64 @@ class ServiceContainer:
             product_repo = SqlAlchemyProductRepository(self.session)
             wallet_repo = SqlAlchemyWalletRepository(self.session)
             inventory_service = InventoryService(product_repo)
-            use_case = CreateOrderUseCase(order_repo, product_repo, wallet_repo, inventory_service, event_dispatcher)
+            order_event_dispatcher = self._services.get('order_event_dispatcher')
+            use_case = CreateOrderUseCase(order_repo, product_repo, wallet_repo, inventory_service, order_event_dispatcher)
             
             return CreateOrderCommandHandler(use_case)
         
         elif service_name == 'confirm_order_handler':
-            return ConfirmOrderCommandHandler(SqlAlchemyOrderRepository(self.session), event_dispatcher)
+            order_event_dispatcher = self._services.get('order_event_dispatcher')
+            return ConfirmOrderCommandHandler(SqlAlchemyOrderRepository(self.session), order_event_dispatcher)
         
         elif service_name == 'ship_order_handler':
-            return ShipOrderCommandHandler(SqlAlchemyOrderRepository(self.session), event_dispatcher)
+            order_event_dispatcher = self._services.get('order_event_dispatcher')
+            return ShipOrderCommandHandler(SqlAlchemyOrderRepository(self.session), order_event_dispatcher)
         
         elif service_name == 'complete_order_handler':
-            return CompleteOrderCommandHandler(SqlAlchemyOrderRepository(self.session), event_dispatcher)
+            order_event_dispatcher = self._services.get('order_event_dispatcher')
+            return CompleteOrderCommandHandler(SqlAlchemyOrderRepository(self.session), order_event_dispatcher)
         
         elif service_name == 'cancel_order_handler':
-            return CancelOrderCommandHandler(SqlAlchemyOrderRepository(self.session), event_dispatcher)
+            order_event_dispatcher = self._services.get('order_event_dispatcher')
+            return CancelOrderCommandHandler(SqlAlchemyOrderRepository(self.session), order_event_dispatcher)
+        
+        # Wallet handlers
+        elif service_name == 'get_wallet_balance_handler':
+            return GetWalletBalanceQueryHandler(SqlAlchemyWalletRepository(self.session))
+        
+        elif service_name == 'deposit_wallet_handler':
+            return DepositToWalletCommandHandler(SqlAlchemyWalletRepository(self.session))
+        
+        elif service_name == 'withdraw_wallet_handler':
+            return WithdrawFromWalletCommandHandler(SqlAlchemyWalletRepository(self.session))
+        
+        elif service_name == 'activate_wallet_handler':
+            return ActivateWalletCommandHandler(SqlAlchemyWalletRepository(self.session))
+        
+        elif service_name == 'deactivate_wallet_handler':
+            return DeactivateWalletCommandHandler(SqlAlchemyWalletRepository(self.session))
+        
+        # Product handlers
+        elif service_name == 'create_product_handler':
+            return CreateProductCommandHandler(SqlAlchemyProductRepository(self.session))
+        
+        elif service_name == 'update_product_handler':
+            return UpdateProductCommandHandler(SqlAlchemyProductRepository(self.session))
+        
+        elif service_name == 'activate_product_handler':
+            return ActivateProductCommandHandler(SqlAlchemyProductRepository(self.session))
+        
+        elif service_name == 'deactivate_product_handler':
+            return DeactivateProductCommandHandler(SqlAlchemyProductRepository(self.session))
+        
+        elif service_name == 'get_product_handler':
+            return GetProductQueryHandler(SqlAlchemyProductRepository(self.session))
+        
+        elif service_name == 'get_seller_products_handler':
+            return GetSellerProductsQueryHandler(SqlAlchemyProductRepository(self.session))
+        
+        elif service_name == 'search_products_handler':
+            return SearchProductsQueryHandler(SqlAlchemyProductRepository(self.session))
         
         # Direct repository access
         elif service_name == 'wallet_repository':
@@ -185,7 +269,7 @@ class ServiceContainer:
         
         raise KeyError(f"Service '{service_name}' not found in container")
     
-    def register(self, name: str, instance):
+    def register(self, name: str, instance): # for fake test
         """
         Register a service in the container
         

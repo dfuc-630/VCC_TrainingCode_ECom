@@ -24,7 +24,6 @@ from ddd.user_management.application.commands.login_user_command import (
 def create_user_routes(container):
     user_bp = Blueprint('user_api', __name__, url_prefix='/users')
     
-
     @user_bp.route('/register', methods=['POST'])
     def register():
         try:

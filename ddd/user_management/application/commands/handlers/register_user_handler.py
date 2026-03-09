@@ -7,16 +7,17 @@ from ddd.user_management.domain.value_objects.password import Password
 from ddd.user_management.domain.value_objects.phone_number import PhoneNumber
 from ddd.user_management.domain.value_objects.role import Role
 from ddd.user_management.domain.exceptions import UserAlreadyExistsError
-
-
+from ddd.user_management.application.commands.register_user_command import ChangePasswordCommand
+from ddd.user_management.domain.exceptions import UserNotFoundError
+import logging
+logger = logging.getLogger(__name__)
 class RegisterUserCommandHandler:
     """Handler for registering a new user"""
     
-    def __init__(self, user_repository, event_dispatcher, wallet_repository=None):
+    def __init__(self, user_repository, event_dispatcher):
         
         self.user_repository = user_repository
         self.event_dispatcher = event_dispatcher
-        self.wallet_repository = wallet_repository
     
     def execute(self, command: RegisterUserCommand) -> CreateUserResponseDTO:
         # 1. Create value objects with validation
@@ -41,30 +42,12 @@ class RegisterUserCommandHandler:
         # 4. Save user to repository
         self.user_repository.save(user)
         
-        # 5. Create wallet for the user if wallet_repository is available
-        if self.wallet_repository:
-            print("Wallet creation logic executed.")
-            print(f"Wallet Repository: {self.wallet_repository}")
-            
-            from ddd.payment.domain.entities.wallet import Wallet
-            from ddd.shared.domain.value_objects.money import Money
-            wallet = Wallet.create(user_id=user.id, initial_balance=Money(amount=0, currency='VND'))
-            
-            try:
-                self.wallet_repository.save(wallet)
-                print(f"Wallet saved successfully")
-            except Exception as e:
-                print(f"Error saving wallet: {e}", exc_info=True)
-        else:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning("wallet_repository is None, wallet not created")
-        
-        # 6. Dispatch all domain events (UserCreatedEvent, etc.)
+        # 5. Dispatch all domain events (UserCreatedEvent, etc.)
+        # Payment domain will listen to UserCreatedEvent and create wallet
         for event in user.get_uncommitted_events():
             self.event_dispatcher.dispatch(event)
         
-        # 7. Clear uncommitted events after dispatch
+        # 6. Clear uncommitted events after dispatch
         user.clear_uncommitted_events()
         
         return CreateUserResponseDTO(
@@ -82,8 +65,6 @@ class ChangePasswordCommandHandler:
     
     def execute(self, command):
         """Execute password change"""
-        from ddd.user_management.application.commands.register_user_command import ChangePasswordCommand
-        from ddd.user_management.domain.exceptions import UserNotFoundError
         
         # Load user
         user = self.user_repository.find_by_id(command.user_id)
@@ -112,10 +93,7 @@ class DeactivateUserCommandHandler:
         self.event_dispatcher = event_dispatcher
     
     def execute(self, command):
-        """Execute user deactivation"""
-        from ddd.user_management.application.commands.register_user_command import DeactivateUserCommand
-        from ddd.user_management.domain.exceptions import UserNotFoundError
-        
+        """Execute user deactivation"""    
         user = self.user_repository.find_by_id(command.user_id)
         if not user:
             raise UserNotFoundError(f"User {command.user_id} not found")
@@ -139,9 +117,6 @@ class UpdateUserProfileCommandHandler:
     
     def execute(self, command):
         """Execute profile update"""
-        from ddd.user_management.application.commands.register_user_command import UpdateUserProfileCommand
-        from ddd.user_management.domain.exceptions import UserNotFoundError
-        
         user = self.user_repository.find_by_id(command.user_id)
         if not user:
             raise UserNotFoundError(f"User {command.user_id} not found")
@@ -170,9 +145,6 @@ class ActivateUserCommandHandler:
     
     def execute(self, command):
         """Execute user activation"""
-        from ddd.user_management.application.commands.register_user_command import ActivateUserCommand
-        from ddd.user_management.domain.exceptions import UserNotFoundError
-        
         user = self.user_repository.find_by_id(command.user_id)
         if not user:
             raise UserNotFoundError(f"User {command.user_id} not found")
