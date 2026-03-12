@@ -62,6 +62,30 @@ class OrderItem(Entity):
         self._status = status
         self._processing_at = datetime.now(timezone.utc)
     
+    @staticmethod
+    def _from_persistence(order_item_id: str, product_id: str, product_name: str, 
+                          price: Money, quantity: int, status: str,
+                          processing_at: datetime = None,
+                          created_at: datetime = None,
+                          updated_at: datetime = None) -> 'OrderItem':
+        """Reconstruct an OrderItem from persistence (internal use for repositories)"""
+        item = OrderItem(
+            order_item_id=order_item_id,
+            product_id=product_id,
+            product_name=product_name,
+            price=price,
+            quantity=quantity,
+        )
+        # Set internal state from persistence
+        item._status = OrderItemStatus(status)
+        if processing_at is not None:
+            item._processing_at = processing_at
+        if created_at is not None:
+            item._created_at = created_at
+        if updated_at is not None:
+            item._updated_at = updated_at
+        return item
+    
     def is_reserved(self) -> bool:
         return self._status.value == "reserved"
     

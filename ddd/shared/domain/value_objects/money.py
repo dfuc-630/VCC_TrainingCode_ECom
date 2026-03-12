@@ -66,3 +66,36 @@ class Money(ValueObject):
     
     def __repr__(self) -> str:
         return f"{self._currency} {self._amount}"
+
+    def __lt__(self, other: 'Money') -> bool:
+        if not isinstance(other, Money):
+            return NotImplemented
+        if self._currency != other._currency:
+            raise InvalidValueObjectError("Cannot compare different currencies")
+        return self._amount < other._amount
+
+    def __le__(self, other: 'Money') -> bool:
+        if not isinstance(other, Money):
+            return NotImplemented
+        if self._currency != other._currency:
+            raise InvalidValueObjectError("Cannot compare different currencies")
+        return self._amount <= other._amount
+
+    def __gt__(self, other: 'Money') -> bool:
+        if not isinstance(other, Money):
+            return NotImplemented
+        if self._currency != other._currency:
+            raise InvalidValueObjectError("Cannot compare different currencies")
+        return self._amount > other._amount
+
+    def __ge__(self, other: 'Money') -> bool:
+        if not isinstance(other, Money):
+            return NotImplemented
+        if self._currency != other._currency:
+            raise InvalidValueObjectError("Cannot compare different currencies")
+        return self._amount >= other._amount
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Money):
+            return False
+        return self._amount == other._amount and self._currency == other._currency

@@ -1,6 +1,7 @@
 from typing import Optional, List
 from decimal import Decimal
 from sqlalchemy.exc import IntegrityError
+import logging
 
 from ddd.order_management.infrastructure.persistence.sqlalchemy_order_model import OrderModel, OrderItemModel
 from ddd.order_management.domain.repositories.order_repository_interface import OrderRepository
@@ -9,6 +10,8 @@ from ddd.order_management.domain.entities.order_item import OrderItem
 from ddd.order_management.domain.value_objects.order import OrderStatus, OrderItemStatus, PaymentStatus, OrderId, OrderNumber
 from ddd.shared.domain.value_objects.money import Money
 from ddd.order_management.domain.exceptions import OrderNotFoundError
+
+logger = logging.getLogger(__name__)
 
 
 class SqlAlchemyOrderRepository(OrderRepository):
@@ -26,7 +29,7 @@ class SqlAlchemyOrderRepository(OrderRepository):
             model = OrderModel(id=order.id)
         
         # Map domain aggregate to ORM model
-        model.order_number = order.order_number.value
+        model.order_number = order.order_number
         model.customer_id = order.customer_id
         model.seller_id = order.seller_id
         model.shipping_address = order.shipping_address
@@ -35,7 +38,7 @@ class SqlAlchemyOrderRepository(OrderRepository):
         model.total_amount = Decimal(str(order.total_amount.amount))
         model.status = order.status.value
         model.payment_status = order.payment_status.value
-        model.error_message = order.error_message
+        # model.error_message = order.error_message
         model.retry_count = order.retry_count
         
         # Save order items
@@ -51,7 +54,15 @@ class SqlAlchemyOrderRepository(OrderRepository):
     
     def find_by_id(self, entity_id: str) -> Optional[Order]:
         model = self._session.query(OrderModel).filter_by(id=entity_id).first()
-        return self._to_domain(model) if model else None
+        logger.info(f"find_by_id: Queried for id={entity_id}, found={model is not None}")
+        if model is None:
+            logger.warning(f"find_by_id: No order model found for id={entity_id}")
+            return None
+        
+        domain_order = self._to_domain(model)
+        if domain_order is None:
+            logger.warning(f"find_by_id: Failed to convert OrderModel to domain Order for id={entity_id}")
+        return domain_order
     
     def find_by_order_number(self, order_number: OrderNumber) -> Optional[Order]:
         """Find order by order number"""
@@ -103,35 +114,36 @@ class SqlAlchemyOrderRepository(OrderRepository):
         
         try:
             # Reconstruct value objects
-            order_status = OrderStatus(model.status)
-            payment_status = PaymentStatus(model.payment_status)
-            order_number = OrderNumber(model.order_number)
-            total = Money(amount=float(model.total_amount))
+            total = Money(amount=float(model.total_amount)) if model.total_amount else Money(0)
             
-            # Create order aggregate
-            order = Order(
+            # Reconstruct items first
+            items = [SqlAlchemyOrderRepository._item_to_domain(item_model) for item_model in model.items]
+            
+            # Use factory method to reconstruct Order from persistence
+            order = Order._from_persistence(
                 order_id=model.id,
-                order_number=order_number,
+                order_number=model.order_number,
                 customer_id=model.customer_id,
                 seller_id=model.seller_id,
                 shipping_address=model.shipping_address,
                 shipping_phone=model.shipping_phone,
+                status=model.status,
+                payment_status=model.payment_status,
                 total_amount=total,
-                status=order_status,
-                payment_status=payment_status,
-                error_message=model.error_message,
+                processing_at=None,  # Not tracked in OrderModel
                 retry_count=model.retry_count,
+                last_error=model.error_message,  # Maps to error_message in OrderModel
+                sent_tele=False,  # Not tracked in OrderModel
                 created_at=model.created_at,
                 updated_at=model.updated_at,
             )
             
-            # Reconstruct items
-            for item_model in model.items:
-                item = SqlAlchemyOrderRepository._item_to_domain(item_model)
-                order._items.append(item)
+            # Set items directly
+            order._items = items
             
             return order
         except Exception as e:
+            logger.error(f"Error converting OrderModel to Order domain entity: {e}", exc_info=True)
             return None
     
     @staticmethod
@@ -154,13 +166,13 @@ class SqlAlchemyOrderRepository(OrderRepository):
     @staticmethod
     def _item_to_domain(model: OrderItemModel) -> OrderItem:
         """Convert OrderItem ORM model to domain entity"""
-        return OrderItem(
+        return OrderItem._from_persistence(
             order_item_id=model.id,
             product_id=model.product_id,
             product_name=model.product_name,
             price=Money(amount=float(model.price)),
             quantity=model.quantity,
-            status=OrderItemStatus(model.status),
+            status=model.status,
             processing_at=model.processing_at,
             created_at=model.created_at,
             updated_at=model.updated_at,

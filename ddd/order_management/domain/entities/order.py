@@ -15,6 +15,10 @@ from ddd.order_management.domain.value_objects import (
     PaymentStatus,
 )
 from ddd.order_management.domain.entities.order_item import OrderItem
+from ddd.order_management.domain.exceptions import CannotModifyCompletedOrderError
+from ddd.order_management.domain.exceptions import CannotConfirmEmptyOrderError
+from ddd.order_management.domain.exceptions import InvalidOrderStatusTransitionError
+from ddd.order_management.domain.events import OrderConfirmedEvent
 
 
 class Order(AggregateRoot):
@@ -62,6 +66,39 @@ class Order(AggregateRoot):
             shipping_phone=shipping_phone,
         )
         
+        return order
+    
+    @staticmethod
+    def _from_persistence(order_id: str, order_number: str, customer_id: str, seller_id: str,
+                          shipping_address: str, shipping_phone: str, status: str,
+                          payment_status: str, total_amount: Optional[Money],
+                          processing_at: Optional[datetime], retry_count: int,
+                          last_error: Optional[str], sent_tele: bool,
+                          created_at: Optional[datetime] = None,
+                          updated_at: Optional[datetime] = None) -> 'Order':
+        """Reconstruct an Order from persistence (internal use for repositories)"""
+        order = Order(
+            order_id=order_id,
+            order_number=order_number,
+            customer_id=customer_id,
+            seller_id=seller_id,
+            shipping_address=shipping_address,
+            shipping_phone=shipping_phone,
+        )
+        # Set internal state from persistence
+        order._status = OrderStatus(status)
+        order._payment_status = PaymentStatus(payment_status)
+        order._total_amount = total_amount
+        if processing_at is not None:
+            order._processing_at = processing_at
+        order._retry_count = retry_count
+        order._last_error = last_error
+        order._sent_tele = sent_tele
+        if created_at is not None:
+            order._created_at = created_at
+        if updated_at is not None:
+            order._updated_at = updated_at
+        # order.clear_events()  # Don't emit events during reconstruction
         return order
     
     # Properties (read-only)
@@ -120,7 +157,6 @@ class Order(AggregateRoot):
             CannotModifyCompletedOrderError: If order is completed
         """
         if not self._can_modify():
-            from ddd.order_management.domain.exceptions import CannotModifyCompletedOrderError
             raise CannotModifyCompletedOrderError()
         
         item = OrderItem(
@@ -151,7 +187,6 @@ class Order(AggregateRoot):
             CannotModifyCompletedOrderError: If order is completed
         """
         if not self._can_modify():
-            from ddd.order_management.domain.exceptions import CannotModifyCompletedOrderError
             raise CannotModifyCompletedOrderError()
         
         self._items = [item for item in self._items if item.product_id != product_id]
@@ -168,11 +203,9 @@ class Order(AggregateRoot):
             InvalidOrderStatusTransitionError: If invalid status transition
         """
         if len(self._items) == 0:
-            from ddd.order_management.domain.exceptions import CannotConfirmEmptyOrderError
             raise CannotConfirmEmptyOrderError("Cannot confirm order with no items")
         
         if not self._status.can_transition_to(OrderStatus("confirmed")):
-            from ddd.order_management.domain.exceptions import InvalidOrderStatusTransitionError
             raise InvalidOrderStatusTransitionError(
                 f"Cannot transition from {self._status.value} to confirmed"
             )
@@ -180,7 +213,6 @@ class Order(AggregateRoot):
         self._status = OrderStatus("confirmed")
         self._processing_at = datetime.now(timezone.utc)
         
-        from ddd.order_management.domain.events import OrderConfirmedEvent
         self.raise_domain_event(OrderConfirmedEvent(
             order_id=self.id,
             order_number=self._order_number,
@@ -192,7 +224,6 @@ class Order(AggregateRoot):
     def ship(self) -> None:
         """Mark order as shipped"""
         if not self._status.can_transition_to(OrderStatus("shipping")):
-            from ddd.order_management.domain.exceptions import InvalidOrderStatusTransitionError
             raise InvalidOrderStatusTransitionError()
         
         self._status = OrderStatus("shipping")
@@ -203,7 +234,6 @@ class Order(AggregateRoot):
     def complete(self) -> None:
         """Mark order as completed"""
         if self._status.value != "shipping":
-            from ddd.order_management.domain.exceptions import InvalidOrderStatusTransitionError
             raise InvalidOrderStatusTransitionError()
         
         self._status = OrderStatus("completed")

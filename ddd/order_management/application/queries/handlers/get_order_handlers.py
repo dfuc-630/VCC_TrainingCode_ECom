@@ -16,6 +16,7 @@ class GetOrderQueryHandler:
     
     def execute(self, query: GetOrderQuery) -> Optional[OrderDTO]:
         """Get order by ID"""
+        print(f"Executing GetOrderQueryHandler for order_id={query.order_id}")
         order = self.order_repository.find_by_id(query.order_id)
         
         if not order:

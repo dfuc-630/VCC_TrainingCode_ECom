@@ -62,7 +62,7 @@ class InventoryService:
     def seed_stock_from_db(self, products: dict) -> None:
         """
         Initialize stock in Redis from database products.
-        Uses SETNX to not override existing keys.
+        Uses SET to ensure Redis stock matches DB stock.
         
         Args:
             products: Dict of {product_id: Product entity}
@@ -74,11 +74,20 @@ class InventoryService:
             pipe = self._redis.pipeline()
             for product_id, product in products.items():
                 key = self._stock_key(product_id)
-                # SETNX: only set if not exists
-                pipe.set(key, product.quantity, nx=True)
-            pipe.execute()
+                # Get current Redis value
+                current_val = int(self._redis.get(key) or 0)
+                # Get DB value
+                db_val = int(product.quantity) if hasattr(product, 'quantity') else int(product.stock_quantity)
+                
+                # Only update if DB value is higher (stock was increased) or if no key exists
+                if current_val == 0 or db_val > current_val:
+                    logger.debug(f"Seeding {key}: DB={db_val}, Redis={current_val}")
+                    pipe.set(key, db_val)
+            
+            result = pipe.execute()
+            logger.debug(f"Seeded {len(result)} product stocks")
         except Exception as e:
-            logger.error(f"Error seeding stock: {e}")
+            logger.error(f"Error seeding stock: {e}", exc_info=True)
     
     def reserve_items(self, items: List[dict]) -> Tuple[bool, str, Optional[str]]:
         """
@@ -108,7 +117,7 @@ class InventoryService:
             # Build keys and quantities for Lua script
             keys = [self._stock_key(item['product_id']) for item in items]
             quantities = [str(item['quantity']) for item in items]
-            
+            print(f"Reserving items: keys={keys}, quantities={quantities}")
             # Execute atomic reservation
             if self._reserve_script:
                 result = self._reserve_script(keys=keys, args=quantities)

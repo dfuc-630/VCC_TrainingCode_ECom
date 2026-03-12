@@ -22,6 +22,9 @@ class OrderKafkaProducer:
         self.bootstrap_servers = bootstrap_servers
         logger.info(f"Kafka Producer initialized: {bootstrap_servers}")
     
+    def send(self, topic, value=None, key=None):
+        return self.producer.send(topic, value=value, key=key)
+    
     def publish_order_item_event(self, order_item_id: str, order_id: str, product_id: str, 
                                  quantity: int, event_type: str = "PROCESS_ITEM") -> bool:
         topic = "order-item-events"

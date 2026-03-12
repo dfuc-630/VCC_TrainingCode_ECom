@@ -87,15 +87,10 @@ class CreateOrderUseCase:
             self._order_repository.save(order)
             logger.info(f"Order persisted: {order.id}")
             
-            events = order.get_uncommitted_events()
-            for event in events:
-                self._event_dispatcher.dispatch(event)
-                logger.info(f"Domain event published: {event.__class__.__name__}")
-            
             self._publish_order_item_events(order, order_items_data)
             logger.info(f"Order-item events published: {len(order.items)} items")
             
-            order.clear_uncommitted_events()
+            # order.clear_uncommitted_events()
             
             logger.info(f" Order created successfully (async processing started): {order.id}")
             return order
@@ -152,6 +147,9 @@ class CreateOrderUseCase:
             # Get product price (prefer current_price if available)
             price = getattr(product, 'current_price', getattr(product, 'price', 0))
             
+            if isinstance(price, Money):
+                price = price.amount
+            
             order_items.append({
                 'product_id': str(product.id),
                 'product_name': product.name,
@@ -165,11 +163,6 @@ class CreateOrderUseCase:
         return order_items
     
     def _publish_order_item_events(self, order: Order, order_items_data: List[dict]) -> None:
-        
-        if not self._kafka_producer:
-            logger.warning("No Kafka producer configured. Items will not be processed asynchronously.")
-            return
-        
         try:
             # Publish each order item for worker processing
             for item in order.items:
@@ -183,7 +176,7 @@ class CreateOrderUseCase:
                 }
                 
                 # Send to topic: order-item-events
-                # kafka_order_item_worker listens and processes
+                # Kafka order item worker listens and processes
                 self._event_dispatcher.send_message(
                     topic='order-item-events',
                     message=event,
@@ -192,7 +185,7 @@ class CreateOrderUseCase:
                 
                 logger.info(f"Order-item event published: order_item_id={item.id}, product_id={item.product_id}")
             
-            # Also publish order-level event for kafka_order_worker
+            # Also publish order-level event for order worker
             order_event = {
                 'order_id': order.id,
                 'customer_id': order.customer_id,
@@ -204,7 +197,7 @@ class CreateOrderUseCase:
             }
             
             # Send to topic: order-events
-            # kafka_order_worker listens and aggregates item results
+            # Kafka order worker listens and aggregates item results
             self._event_dispatcher.send_message(
                 topic='order-events',
                 message=order_event,

@@ -4,10 +4,15 @@ Fully integrated with async Kafka workers and Redis stock management
 """
 from flask import Blueprint, request, jsonify
 import logging
+from ddd.order_management.application.queries.get_order_query import GetOrderQuery
 from ddd.order_management.domain.exceptions import (
     OrderNotFoundError,
     InsufficientStockError,
     InsufficientBalanceError,
+)
+from ddd.order_management.application.commands import (
+    CreateOrderCommand,
+    CreateOrderItemCommand,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,11 +48,32 @@ def create_order_routes(container):
             
             logger.info(f"Creating order: customer={data['customer_id']}, items={len(data['items'])}")
             
+            # Convert dict to command object
+            items = [
+                CreateOrderItemCommand(
+                    product_id=item['product_id'],
+                    quantity=item['quantity']
+                )
+                for item in data['items']
+            ]
+            
+            command = CreateOrderCommand(
+                customer_id=data['customer_id'],
+                seller_id=data['seller_id'],
+                items=items,
+                shipping_address=data['shipping_address'],
+                shipping_phone=data['shipping_phone']
+            )
+            
             # Execute via handler
             handler = container.get('create_order_handler')
-            order_dto = handler.execute(data)
+            try:
+                order_dto = handler.execute(command)
+            except Exception as e:
+                logger.error(f"Error executing create order command: {e}", exc_info=True)
+                raise
+            logger.info(f" Order created: {order_dto.order_id} (PENDING)")
             
-            logger.info(f" Order created: {order_dto.id} (PENDING)")
             
             return jsonify({
                 'message': 'Order created successfully',
@@ -78,7 +104,8 @@ def create_order_routes(container):
         try:
             logger.info(f"Fetching order: {order_id}")
             handler = container.get('get_order_handler')
-            order_dto = handler.execute({'order_id': order_id})
+            query = GetOrderQuery(order_id=order_id)
+            order_dto = handler.execute(query)
             
             if not order_dto:
                 return jsonify({'error': 'Order not found'}), 404

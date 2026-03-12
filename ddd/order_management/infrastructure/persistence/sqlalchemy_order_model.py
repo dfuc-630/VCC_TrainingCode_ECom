@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 from decimal import Decimal
 from integration.db import db
+from sqlalchemy import Numeric
 
 
 class OrderModel(db.Model):
@@ -18,7 +19,7 @@ class OrderModel(db.Model):
     shipping_phone = db.Column(db.String(20), nullable=False)
     
     # Order totals
-    total_amount = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    total_amount = db.Column(db.Numeric(18, 2), nullable=False, default=0)
     
     # Status
     status = db.Column(db.String(50), nullable=False, index=True)  # pending, confirmed, shipping, completed, cancelled, failed
